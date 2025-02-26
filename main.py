@@ -1,6 +1,7 @@
 import os
 import argparse
 import logging
+from dotenv import load_dotenv
 from src.utils import read_config, get_excel_files, get_file_config_by_path, ensure_directory_exists
 from src.processing import process_excel_file
 from src.db_operations import create_engine, load_dataframe_to_db
@@ -20,12 +21,20 @@ def main():
     parser = argparse.ArgumentParser(description="Load Excel files into Oracle database")
     parser.add_argument("--config", default="config/config.yaml", help="Path to config file")
     parser.add_argument("--data-dir", default="data", help="Directory containing Excel files")
+    parser.add_argument("--env-file", default=".env", help="Path to .env file with database credentials")
     args = parser.parse_args()
     
     try:
         # Ensure directories exist
         ensure_directory_exists(args.data_dir)
         ensure_directory_exists(os.path.dirname(args.config))
+        
+        # Load environment variables
+        if os.path.exists(args.env_file):
+            load_dotenv(args.env_file)
+            logger.info(f"Loaded environment variables from {args.env_file}")
+        else:
+            logger.warning(f"Environment file {args.env_file} not found. Using system environment variables.")
         
         # Read configuration
         config = read_config(args.config)

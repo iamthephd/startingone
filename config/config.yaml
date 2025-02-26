@@ -80,9 +80,4 @@ excel_files:
 
 # Database configuration
 database:
-  username: "db_user"
-  password: "db_password"
-  host: "localhost"
-  port: "1521"
-  service_name: "ORCLPDB"
   connection_string: "oracle+cx_oracle://{username}:{password}@{host}:{port}/?service_name={service_name}"

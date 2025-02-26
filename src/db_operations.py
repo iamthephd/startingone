@@ -3,6 +3,8 @@ import sqlalchemy as sa
 from sqlalchemy import text
 import logging
 import cx_Oracle
+import os
+from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 
 # Configure logging
@@ -15,22 +17,49 @@ logger = logging.getLogger(__name__)
 def create_engine(db_config):
     """
     Create a SQLAlchemy engine for Oracle database connection.
+    Uses environment variables for sensitive information.
     
     Args:
-        db_config (dict): Database configuration parameters
+        db_config (dict): Database configuration parameters (connection string template)
         
     Returns:
         Engine: SQLAlchemy engine object
     """
+    # Load environment variables
+    load_dotenv()
+    
+    # Get credentials from environment variables
+    username = os.getenv('DB_USERNAME')
+    password = os.getenv('DB_PASSWORD')
+    host = os.getenv('DB_HOST')
+    port = os.getenv('DB_PORT')
+    service_name = os.getenv('DB_SERVICE_NAME')
+    
+    # Validate that all required environment variables are set
+    if not all([username, password, host, port, service_name]):
+        missing_vars = []
+        for var_name, var_value in [
+            ('DB_USERNAME', username),
+            ('DB_PASSWORD', password),
+            ('DB_HOST', host),
+            ('DB_PORT', port),
+            ('DB_SERVICE_NAME', service_name)
+        ]:
+            if not var_value:
+                missing_vars.append(var_name)
+        
+        raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+    
+    # Format the connection string with values from environment variables
     connection_string = db_config['connection_string'].format(
-        username=db_config['username'],
-        password=db_config['password'],
-        host=db_config['host'],
-        port=db_config['port'],
-        service_name=db_config['service_name']
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        service_name=service_name
     )
     
-    logger.info(f"Creating database connection to {db_config['host']}:{db_config['port']}")
+    logger.info(f"Creating database connection to {host}:{port}")
     
     try:
         engine = sa.create_engine(connection_string)
