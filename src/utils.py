@@ -4,6 +4,8 @@ import glob
 import logging
 from typing import Dict, List, Any, Optional
 
+from sqlalchemy import create_engine, Table, Column, Integer, String, Float, MetaData
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -95,3 +97,24 @@ def ensure_directory_exists(directory: str) -> None:
     if not os.path.exists(directory):
         os.makedirs(directory)
         logger.info(f"Created directory: {directory}")
+
+def mapping_to_sql(dtype_dict):
+
+    # Define SQLAlchemy type mapping
+    sqlalchemy_type_mapping = {
+        "INTEGER": Integer,
+        "FLOAT": Float,
+    }
+
+    # Handle VARCHAR(n) dynamically
+    def parse_sql_type(sql_type):
+        if sql_type.startswith("VARCHAR(") and sql_type.endswith(")"):
+            size = int(sql_type[8:-1])  # Extracts 50 from VARCHAR(50)
+            return String(size)
+        return sqlalchemy_type_mapping.get(sql_type, String(255))  # Default to String(255)
+    
+    output_dict = {}
+    for key, value in dtype_dict.items():
+        output_dict[key] = parse_sql_type(value)
+    
+    return output_dict
