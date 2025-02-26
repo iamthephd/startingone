@@ -1,0 +1,88 @@
+# Configuration for Excel-to-Database loader
+
+excel_files:
+  sales:
+    file_path: "data/sales.xlsx"
+    table_name: "SALES_DATA"
+    sheet_name: "Sales"
+    columns_mapping:
+      "Sale Date": "sale_date"
+      "Product ID": "product_id"
+      "Quantity": "quantity"
+      "Unit Price": "unit_price"
+      "Customer ID": "customer_id"
+    required_columns:
+      - "Sale Date"
+      - "Product ID"
+      - "Quantity"
+      - "Unit Price"
+    dtype_dict:
+      sale_date: "DATE"
+      product_id: "VARCHAR(20)"
+      quantity: "NUMBER"
+      unit_price: "NUMBER(10,2)"
+      customer_id: "VARCHAR(20)"
+    processing_function: "process_sales_data"
+    
+  inventory:
+    file_path: "data/inventory.xlsx"
+    table_name: "INVENTORY_DATA"
+    sheet_name: "Inventory"
+    columns_mapping:
+      "Item Code": "product_id"
+      "Description": "product_description"
+      "Category": "category"
+      "Stock Level": "quantity_in_stock"
+      "Reorder Point": "reorder_point"
+      "Unit Cost": "unit_cost"
+    required_columns:
+      - "Item Code"
+      - "Description"
+      - "Stock Level"
+    dtype_dict:
+      product_id: "VARCHAR(20)"
+      product_description: "VARCHAR(200)"
+      category: "VARCHAR(50)"
+      quantity_in_stock: "NUMBER"
+      reorder_point: "NUMBER"
+      unit_cost: "NUMBER(10,2)"
+    processing_function: "process_inventory_data"
+
+  customers:
+    file_path: "data/customers.xlsx"
+    table_name: "CUSTOMER_DATA"
+    sheet_name: "Customers"
+    columns_mapping:
+      "Customer No.": "customer_id"
+      "Name": "customer_name"
+      "Contact": "contact_person"
+      "Email Address": "email"
+      "Phone Number": "phone"
+      "Address": "address"
+      "City": "city"
+      "Country": "country"
+      "Status": "status"
+    required_columns:
+      - "Customer No."
+      - "Name"
+      - "Email Address"
+    dtype_dict:
+      customer_id: "VARCHAR(20)"
+      customer_name: "VARCHAR(100)"
+      contact_person: "VARCHAR(100)"
+      email: "VARCHAR(100)"
+      phone: "VARCHAR(20)"
+      address: "VARCHAR(200)"
+      city: "VARCHAR(50)"
+      country: "VARCHAR(50)"
+      status: "VARCHAR(20)"
+    processing_function: "process_customer_data"
+
+# Database configuration
+database:
+  username: "db_user"
+  password: "db_password"
+  host: "localhost"
+  port: "1521"
+  service_name: "ORCLPDB"
+  connection_string: "oracle+cx_oracle://{username}:{password}@{host}:{port}/?service_name={service_name}"
