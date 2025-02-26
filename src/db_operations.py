@@ -2,7 +2,7 @@ import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy import text
 import logging
-import cx_Oracle
+import oracledb
 import os
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
@@ -13,6 +13,24 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def initialize_oracle_client(client_path):
+    """
+    Initialize the Oracle client with the specified library directory.
+    
+    Args:
+        client_path (str): Path to the Oracle client libraries
+        
+    Returns:
+        None
+    """
+    try:
+        # Initialize the Oracle client
+        oracledb.init_oracle_client(lib_dir=client_path)
+        logger.info(f"Successfully initialized Oracle client from {client_path}")
+    except Exception as e:
+        logger.error(f"Error initializing Oracle client: {str(e)}")
+        raise
 
 def create_engine(db_config):
     """
@@ -49,6 +67,11 @@ def create_engine(db_config):
                 missing_vars.append(var_name)
         
         raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+    
+    # Initialize Oracle client if path is provided
+    oracle_client_path = db_config.get('oracle_client_path')
+    if oracle_client_path:
+        initialize_oracle_client(oracle_client_path)
     
     # Format the connection string with values from environment variables
     connection_string = db_config['connection_string'].format(
