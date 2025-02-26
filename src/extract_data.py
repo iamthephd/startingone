@@ -1,182 +1,106 @@
-def cmdm_product_sql(connection, table_name, group_code_col="Reason_Code", value_col="Amount"):
-    # First, get all distinct dates to build our dynamic pivot
-    date_query = f'''
-    SELECT DISTINCT "Date"
-    FROM "{table_name}"
-    ORDER BY "Date"
-    '''
+import pandas as pd
+import traceback
+
+def efficient_pivot_from_oracle(engine, table_name, group_code_col="reason_code", value_col="amount", date_col="date"):
+    """
+    Generate a pivot table directly from Oracle database using SQL.
     
-    # Get the distinct dates from the database
-    date_df = pd.read_sql(date_query, con=connection)
-    date_columns = date_df["Date"].tolist()
+    Parameters:
+    engine: SQLAlchemy engine or database connection
+    table_name (str): Name of the database table
+    group_code_col (str): Column name for rows in pivot table (default: "reason_code")
+    value_col (str): Column containing values to aggregate (default: "amount")
+    date_col (str): Column containing date values (default: "date")
     
-    # Ensure we have enough data for comparisons
-    if len(date_columns) < 2:
-        raise ValueError("Need at least 2 quarters of data for comparison")
-    
-    # Get the current and previous quarters
-    latest_quarter = date_columns[-1]
-    previous_quarter = date_columns[-2]
-    
-    # Find the year-ago quarter (same quarter previous year)
-    year_ago_quarter = None
-    for date in date_columns:
-        if date[-2:] == latest_quarter[-2:] and date[0:4] == str(int(latest_quarter[0:4]) - 1):
-            year_ago_quarter = date
-            break
-    
-    # Prepare the column expressions for each date
-    date_columns_sql = []
-    for date in date_columns:
-        safe_col_name = f"d_{date.replace('Q', '_Q')}"  # Make column names SQL-safe
-        date_columns_sql.append(
-            f'MAX(CASE WHEN "Date" = \'{date}\' THEN amount_in_millions ELSE NULL END) AS {safe_col_name}'
-        )
-    
-    # First part of the query - creating the base aggregation
-    query = f'''
-    WITH base_data AS (
-        SELECT 
-            "{group_code_col}",
-            "Date",
-            SUM("{value_col}") / 1000000 AS amount_in_millions
-        FROM 
-            "{table_name}"
-        GROUP BY 
-            "{group_code_col}", "Date"
-    ),
-    pivot_data AS (
-        SELECT
-            "{group_code_col}",
-            {", ".join(date_columns_sql)}
-    '''
-    
-    # Add QoQ calculations
-    latest_safe = f"d_{latest_quarter.replace('Q', '_Q')}"
-    prev_safe = f"d_{previous_quarter.replace('Q', '_Q')}"
-    
-    query += f'''
-        ,
-        (MAX(CASE WHEN "Date" = '{latest_quarter}' THEN amount_in_millions ELSE NULL END) - 
-         MAX(CASE WHEN "Date" = '{previous_quarter}' THEN amount_in_millions ELSE NULL END)) AS qoq_val,
-        CASE 
-            WHEN MAX(CASE WHEN "Date" = '{previous_quarter}' THEN amount_in_millions ELSE NULL END) = 0 THEN NULL
-            ELSE (MAX(CASE WHEN "Date" = '{latest_quarter}' THEN amount_in_millions ELSE NULL END) - 
-                  MAX(CASE WHEN "Date" = '{previous_quarter}' THEN amount_in_millions ELSE NULL END)) / 
-                 MAX(CASE WHEN "Date" = '{previous_quarter}' THEN amount_in_millions ELSE NULL END) * 100
-        END AS qoq_pct
-    '''
-    
-    # Add YoY calculations if we have year-ago data
-    if year_ago_quarter:
-        year_ago_safe = f"d_{year_ago_quarter.replace('Q', '_Q')}"
-        query += f'''
-        ,
-        (MAX(CASE WHEN "Date" = '{latest_quarter}' THEN amount_in_millions ELSE NULL END) - 
-         MAX(CASE WHEN "Date" = '{year_ago_quarter}' THEN amount_in_millions ELSE NULL END)) AS yoy_val,
-        CASE 
-            WHEN MAX(CASE WHEN "Date" = '{year_ago_quarter}' THEN amount_in_millions ELSE NULL END) = 0 THEN NULL
-            ELSE (MAX(CASE WHEN "Date" = '{latest_quarter}' THEN amount_in_millions ELSE NULL END) - 
-                  MAX(CASE WHEN "Date" = '{year_ago_quarter}' THEN amount_in_millions ELSE NULL END)) / 
-                 MAX(CASE WHEN "Date" = '{year_ago_quarter}' THEN amount_in_millions ELSE NULL END) * 100
-        END AS yoy_pct
-        '''
-    
-    # Complete the pivot_data CTE
-    query += f'''
-        FROM 
-            base_data
-        GROUP BY 
-            "{group_code_col}"
-    )
-    '''
-    
-    # Select statement for the main results
-    query += '''
-    SELECT * FROM pivot_data
-    '''
-    
-    # Add total row in a separate query and UNION
-    total_sums = []
-    for date in date_columns:
-        safe_col_name = f"d_{date.replace('Q', '_Q')}"
-        total_sums.append(f'SUM({safe_col_name}) AS {safe_col_name}')
-    
-    query += f'''
-    UNION ALL
-    SELECT 
-        'Total' AS "{group_code_col}",
-        {", ".join(total_sums)},
-        SUM(qoq_val) AS qoq_val,
-        CASE 
-            WHEN SUM({prev_safe}) = 0 THEN NULL
-            ELSE SUM(qoq_val) / SUM({prev_safe}) * 100
-        END AS qoq_pct
-    '''
-    
-    # Add YoY totals if applicable
-    if year_ago_quarter:
-        query += f'''
-        ,
-        SUM(yoy_val) AS yoy_val,
-        CASE 
-            WHEN SUM({year_ago_safe}) = 0 THEN NULL
-            ELSE SUM(yoy_val) / SUM({year_ago_safe}) * 100
-        END AS yoy_pct
-        '''
-    
-    # Complete the total row query
-    query += '''
-    FROM 
-        pivot_data
-    '''
-    
-    # Add ORDER BY clause
-    query += '''
-    ORDER BY
-        qoq_pct
-    '''
-    
+    Returns:
+    pd.DataFrame: Pivot table with group_code_col as rows and date columns
+    """
     try:
-        # Execute the query and load results into a DataFrame
-        result_df = pd.read_sql(query, con=connection)
+        # First, get all distinct date values to build dynamic SQL
+        date_query = f"""
+        SELECT DISTINCT {date_col} FROM {table_name}
+        ORDER BY {date_col}
+        """
         
-        # Set the group_code_col as the index
-        result_df = result_df.set_index(group_code_col)
+        # Execute the query using pandas
+        date_df = pd.read_sql(date_query, con=engine)
         
-        # Create a mapping from the SQL-safe column names back to the original dates
-        rename_dict = {}
-        for date in date_columns:
-            safe_col_name = f"d_{date.replace('Q', '_Q')}"
-            rename_dict[safe_col_name] = date
+        if date_df.empty:
+            raise ValueError(f"No date values found in {date_col} column")
         
-        # Add the YoY and QoQ renames
-        rename_dict.update({
-            'qoq_val': 'Q/Q $',
-            'qoq_pct': 'Q/Q %',
-        })
+        date_values = date_df[date_col].tolist()
         
-        if year_ago_quarter:
-            rename_dict.update({
-                'yoy_val': 'Y/Y $',
-                'yoy_pct': 'Y/Y %',
-            })
-        else:
-            # Add empty YoY columns if we don't have year-ago data
-            result_df['Y/Y $'] = None
-            result_df['Y/Y %'] = None
+        # Construct the pivot column expressions
+        pivot_columns = []
+        for date_val in date_values:
+            # Create safe column name
+            safe_date = f"date_{date_val.replace('Q', 'q')}"
+            pivot_columns.append(f"SUM(CASE WHEN {date_col} = '{date_val}' THEN {value_col} ELSE 0 END) / 1000000 AS {safe_date}")
         
-        # Rename the columns
-        result_df = result_df.rename(columns=rename_dict)
+        # Build the full pivot query
+        pivot_query = f"""
+        SELECT 
+            {group_code_col},
+            {', '.join(pivot_columns)}
+        FROM {table_name}
+        GROUP BY {group_code_col}
+        ORDER BY {group_code_col}
+        """
         
-        # Reorder columns to put quarters first, followed by YoY and QoQ metrics
-        date_columns_in_df = [col for col in result_df.columns if col in date_columns]
-        final_columns = date_columns_in_df + ['Y/Y $', 'Y/Y %', 'Q/Q $', 'Q/Q %']
-        result_df = result_df[final_columns]
+        print("Executing SQL query:")
+        print(pivot_query)
         
-        return result_df
-    
+        # Execute the query using pandas
+        df = pd.read_sql(pivot_query, con=engine)
+        
+        # Rename columns back to original date format
+        rename_dict = {f"date_{date_val.replace('Q', 'q')}": date_val for date_val in date_values}
+        rename_dict[group_code_col] = group_code_col.title() if group_code_col.lower() == "reason_code" else group_code_col
+        df = df.rename(columns=rename_dict)
+        
+        # Set group_code_col as index
+        df = df.set_index(rename_dict[group_code_col])
+        
+        return df
+        
     except Exception as e:
-        print(f"Error executing SQL: {e}")
-        print(f"Query: {query}")
+        print(f"Error executing Oracle query: {e}")
+        print("SQL query that failed:")
+        print(pivot_query if 'pivot_query' in locals() else "Query not built yet")
+        print(traceback.format_exc())
         raise
+
+def complete_pivot_analysis(engine, table_name, group_code_col="reason_code", value_col="amount", date_col="date"):
+    """
+    Generate a complete pivot table with YoY and QoQ calculations.
+    
+    Parameters:
+    engine: SQLAlchemy engine or database connection
+    table_name (str): Name of the database table
+    group_code_col (str): Column name for rows in pivot table (default: "reason_code")
+    value_col (str): Column containing values to aggregate (default: "amount")
+    date_col (str): Column containing date values (default: "date")
+    
+    Returns:
+    pd.DataFrame: Complete pivot table with all calculations
+    """
+    # Get the base pivot table from Oracle
+    pivot_table = efficient_pivot_from_oracle(engine, table_name, group_code_col, value_col, date_col)
+    
+    # Compute Year-over-Year (Y/Y) and Quarter-over-Quarter (Q/Q) percentage changes
+    pivot_table["Y/Y %"] = (pivot_table.iloc[:, -1] - pivot_table.iloc[:, 0]) / pivot_table.iloc[:, 0] * 100
+    pivot_table["Y/Y $"] = pivot_table.iloc[:, -1] - pivot_table.iloc[:, 0]
+    pivot_table["Q/Q %"] = (pivot_table.iloc[:, 4] - pivot_table.iloc[:, 3]) / pivot_table.iloc[:, 3] * 100
+    pivot_table["Q/Q $"] = pivot_table.iloc[:, 4] - pivot_table.iloc[:, 3]
+    
+    # Sort by Y/Y % and Q/Q %
+    pivot_table = pivot_table.sort_values(by=["Y/Y %", "Q/Q %"], ascending=True)
+    
+    # Add a Total row at the bottom
+    pivot_table.loc["Total"] = pivot_table.sum()
+    
+    # Compute total percentage changes
+    pivot_table.loc["Total", "Y/Y %"] = ((pivot_table.iloc[-1, -5] - pivot_table.iloc[-1, 0]) / pivot_table.iloc[-1, 0]) * 100
+    pivot_table.loc["Total", "Q/Q %"] = ((pivot_table.iloc[-1, -4] - pivot_table.iloc[-1, 3]) / pivot_table.iloc[-1, 3]) * 100
+    
+    return pivot_table
