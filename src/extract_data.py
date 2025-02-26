@@ -56,28 +56,25 @@ def cmdm_product_sql(engine, table_name, group_code_col="Reason_Code", value_col
         
         # Execute the query and load results into pandas
         pivot_df = pd.read_sql(pivot_query, conn)
+        pivot_df = pivot_df.set_index(group_code_col)
         
-        # Calculate Y/Y and Q/Q metrics in pandas
-        if len(date_list) >= 5:  # Ensure we have enough data points
-            pivot_df["Y/Y $"] = pivot_df[date_list[-1]] - pivot_df[date_list[0]]
-            pivot_df["Y/Y %"] = (pivot_df[date_list[-1]] - pivot_df[date_list[0]]) / pivot_df[date_list[0]] * 100
-            pivot_df["Q/Q $"] = pivot_df[date_list[-2]] - pivot_df[date_list[-3]]
-            pivot_df["Q/Q %"] = (pivot_df[date_list[-2]] - pivot_df[date_list[-3]]) / pivot_df[date_list[-3]] * 100
-            
-            # Sort by Y/Y % and Q/Q %
-            pivot_df = pivot_df.sort_values(by=["Y/Y %", "Q/Q %"], ascending=True)
+        # Compute Year-over-Year (Y/Y) and Quarter-over-Quarter (Q/Q) percentage changes
+        pivot_table["Y/Y %"] = (pivot_table.iloc[:, -1] - pivot_table.iloc[:, 0]) / pivot_table.iloc[:, 0] * 100
+        pivot_table["Y/Y $"] = pivot_table.iloc[:, -1] - pivot_table.iloc[:, 0]
+        pivot_table["Q/Q %"] = (pivot_table.iloc[:, 4] - pivot_table.iloc[:, 3]) / pivot_table.iloc[:, 3] * 100
+        pivot_table["Q/Q $"] = pivot_table.iloc[:, 4] - pivot_table.iloc[:, 3]
+        # Sort by Y/Y % and Q/Q %
+        pivot_table = pivot_table.sort_values(by=["Y/Y %", "Q/Q %"], ascending=True)
+        # Convert all numeric values to millions
+        def toMillion(x):
+            return x / 1000000
+        for col in pivot_table.columns:
+            if not col.endswith("%"):
+                pivot_table[col] = pivot_table[col].apply(lambda x: toMillion(x))
+        # Add a Total row at the bottom
+        pivot_table.loc["Total"] = pivot_table.sum()
+        # Compute total percentage changes
+        pivot_table.loc["Total", "Y/Y %"] = ((pivot_table.iloc[-1, -5] - pivot_table.iloc[-1, 0]) / pivot_table.iloc[-1, 0]) * 100
+        pivot_table.loc["Total", "Q/Q %"] = ((pivot_table.iloc[-1, -4] - pivot_table.iloc[-1, 3]) / pivot_table.iloc[-1, 3]) * 100
         
-        # Add a Total row
-        pivot_df.loc["Total"] = pivot_df.sum(numeric_only=True)
-        
-        # Compute total percentage changes for the Total row
-        if len(date_list) >= 5:
-            pivot_df.loc["Total", "Y/Y %"] = ((pivot_df.loc["Total", date_list[-1]] - 
-                                              pivot_df.loc["Total", date_list[0]]) / 
-                                              pivot_df.loc["Total", date_list[0]]) * 100
-            
-            pivot_df.loc["Total", "Q/Q %"] = ((pivot_df.loc["Total", date_list[-2]] - 
-                                              pivot_df.loc["Total", date_list[-3]]) / 
-                                              pivot_df.loc["Total", date_list[-3]]) * 100
-        
-        return pivot_df
+        return pivot_table
