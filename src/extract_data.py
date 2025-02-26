@@ -11,25 +11,37 @@ def cmdm_product_sql(connection, table_name, group_code_col="Reason_Code", value
         GROUP BY 
             "{group_code_col}", "Date"
     ),
-    pivot_data AS (
+    ranked_data AS (
         SELECT 
             "{group_code_col}",
-            MAX(CASE WHEN date_rank = 1 THEN "Amount_Millions" END) AS first_date_amount,
-            MAX(CASE WHEN date_rank = 4 THEN "Amount_Millions" END) AS q_minus_1_amount,
-            MAX(CASE WHEN date_rank = 5 THEN "Amount_Millions" END) AS q_current_amount,
-            MAX(CASE WHEN date_rank = max_rank THEN "Amount_Millions" END) AS last_date_amount
-        FROM (
-            SELECT 
-                "{group_code_col}",
-                "Date",
-                "Amount_Millions",
-                RANK() OVER (PARTITION BY "{group_code_col}" ORDER BY "Date") AS date_rank,
-                MAX(RANK() OVER (PARTITION BY "{group_code_col}" ORDER BY "Date")) OVER (PARTITION BY "{group_code_col}") AS max_rank
-            FROM 
-                base_data
-        )
+            "Date",
+            "Amount_Millions",
+            RANK() OVER (PARTITION BY "{group_code_col}" ORDER BY "Date") AS date_rank
+        FROM 
+            base_data
+    ),
+    max_ranks AS (
+        SELECT 
+            "{group_code_col}",
+            MAX(date_rank) AS max_rank
+        FROM 
+            ranked_data
         GROUP BY 
             "{group_code_col}"
+    ),
+    pivot_data AS (
+        SELECT 
+            r."{group_code_col}",
+            MAX(CASE WHEN r.date_rank = 1 THEN r."Amount_Millions" END) AS first_date_amount,
+            MAX(CASE WHEN r.date_rank = 4 THEN r."Amount_Millions" END) AS q_minus_1_amount,
+            MAX(CASE WHEN r.date_rank = 5 THEN r."Amount_Millions" END) AS q_current_amount,
+            MAX(CASE WHEN r.date_rank = m.max_rank THEN r."Amount_Millions" END) AS last_date_amount
+        FROM 
+            ranked_data r
+        JOIN
+            max_ranks m ON r."{group_code_col}" = m."{group_code_col}"
+        GROUP BY 
+            r."{group_code_col}"
     ),
     final_data AS (
         SELECT 
