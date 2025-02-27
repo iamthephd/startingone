@@ -185,3 +185,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Avoid unsupported keywords like LIMIT, OFFSET, AUTO_INCREMENT, BOOLEAN, TEXT, DATETIME, and IF EXISTS. Use FETCH FIRST N ROWS ONLY instead of LIMIT, SEQUENCE instead of AUTO_INCREMENT, and SYSTIMESTAMP instead of NOW(). Ensure proper Oracle SQL syntax
