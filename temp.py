@@ -1,190 +1,239 @@
-import os
-from typing import List, Dict, Any, Optional
-from langchain.chains import SQLDatabaseChain
-from langchain.sql_database import SQLDatabase
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import PromptTemplate
-from langchain.chains import ConversationChain
-from langchain.schema import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnablePassthrough
+from langgraph.graph import END, StateGraph
+from typing import TypedDict, List, Dict, Any, Optional
+from langchain_community.utilities.sql_database import SQLDatabase
 
-# Setup Oracle DB connection
-def get_oracle_db():
-    # Replace with your Oracle connection details
-    oracle_connection_string = "oracle+cx_oracle://username:password@hostname:port/service_name"
-    return SQLDatabase.from_uri(oracle_connection_string)
+# Custom LLM wrapper for your model that only supports invoke
+class CustomLLM:
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        
+    def invoke(self, prompt: str) -> str:
+        # This is a placeholder for your actual custom LLM
+        # In a real implementation, you would call your LLM here
+        print(f"Calling LLM {self.model_id} with prompt: {prompt[:50]}...")
+        return f"Response from {self.model_id}"
 
-# Method 1: Simple one-shot query without follow-up capability
-def create_simple_oracle_chatbot(llm):
-    db = get_oracle_db()
-    
-    # Create a prompt template for SQL generation
-    sql_prompt = """
-    You are an AI assistant that helps users query an Oracle database.
-    Based on the user's question, generate the appropriate SQL query.
-    The database has tables for customers, sales, products, and more.
-    
-    User Question: {question}
-    
-    SQL Query:
-    """
-    
-    # Create a prompt template for generating the final response
-    response_prompt = """
-    You are an AI assistant that helps users understand data from an Oracle database.
-    Given the user's question and the SQL query results, provide a clear, concise answer.
-    
-    User Question: {question}
-    SQL Query: {query}
-    SQL Result: {result}
-    
-    Your Response:
-    """
-    
-    def query_database(user_question):
-        # Step 1: Generate SQL query
-        sql_messages = [HumanMessage(content=sql_prompt.format(question=user_question))]
-        sql_response = llm.invoke(sql_messages)
-        sql_query = sql_response.content.strip()
-        
-        # Step 2: Execute the query
-        try:
-            result = db.run(sql_query)
-        except Exception as e:
-            return f"Error executing query: {str(e)}"
-        
-        # Step 3: Generate the final response
-        response_messages = [
-            HumanMessage(content=response_prompt.format(
-                question=user_question,
-                query=sql_query,
-                result=result
-            ))
-        ]
-        final_response = llm.invoke(response_messages)
-        return final_response.content
-    
-    return query_database
+# Initialize the three LLMs
+sql_generator_llm = CustomLLM("sql-generator")
+sql_validator_llm = CustomLLM("sql-validator")
+response_generator_llm = CustomLLM("response-generator")
 
-# Method 2: Conversational bot with follow-up capability
-def create_conversational_oracle_chatbot(llm):
-    db = get_oracle_db()
+# Connect to Oracle DB (placeholder)
+db = SQLDatabase()  # In reality, this would be your Oracle DB connection
+
+# Define the state for our graph
+class ChatbotState(TypedDict):
+    chat_history: List[Dict[str, Any]]
+    current_query: str
+    sql_query: Optional[str]
+    sql_validation: Optional[bool]
+    db_results: Optional[Dict[str, Any]]
+    attempt_count: int
+
+# Define the nodes for our graph
+def generate_sql(state: ChatbotState) -> ChatbotState:
+    """Generate SQL query from user question"""
+    # Format prompt with user query and chat history for context
+    history_str = format_chat_history(state["chat_history"])
     
-    # Create memory to store conversation history
-    memory = []
+    # Prompt template for SQL generation
+    prompt = f"""
+    Given the following chat history:
+    {history_str}
     
-    # Create a prompt template for SQL generation with context
-    sql_context_prompt = """
-    You are an AI assistant that helps users query an Oracle database.
-    Based on the user's question and the conversation history, generate the appropriate SQL query.
-    The database has tables for customers, sales, products, and more.
+    And the user's current query: {state["current_query"]}
     
-    Conversation History:
-    {history}
-    
-    Current User Question: {question}
-    
-    SQL Query:
+    Generate a SQL query for Oracle DB that will answer the user's question.
+    Return only the SQL query without any explanations.
     """
     
-    # Create a prompt template for generating the final response
-    response_context_prompt = """
-    You are an AI assistant that helps users understand data from an Oracle database.
-    Given the conversation history, the user's question, and the SQL query results, provide a clear, concise answer.
+    # Generate SQL query
+    sql_query = sql_generator_llm.invoke(prompt)
     
-    Conversation History:
-    {history}
+    # Update state
+    return {**state, "sql_query": sql_query, "attempt_count": state["attempt_count"] + 1}
+
+def validate_sql(state: ChatbotState) -> ChatbotState:
+    """Validate the generated SQL query"""
+    # Prompt template for SQL validation
+    prompt = f"""
+    Validate the following SQL query for Oracle DB:
     
-    Current User Question: {question}
-    SQL Query: {query}
-    SQL Result: {result}
+    {state["sql_query"]}
     
-    Your Response:
+    This query is meant to answer the user question: {state["current_query"]}
+    
+    Return 'VALID' if the query is correct, 'INVALID' otherwise.
+    If invalid, explain the issue briefly.
     """
     
-    def format_history(memory_list):
-        formatted = ""
-        for i, message in enumerate(memory_list):
-            role = "User" if i % 2 == 0 else "Assistant"
-            formatted += f"{role}: {message}\n"
-        return formatted
+    # Validate SQL query
+    validation_result = sql_validator_llm.invoke(prompt)
     
-    def chat(user_question):
-        # Add user question to memory
-        if len(memory) > 0:  # Not the first question
-            memory.append(user_question)
-            history = format_history(memory[:-1])  # Exclude current question from history
-        else:
-            memory.append(user_question)
-            history = ""
-        
-        # Step 1: Generate SQL query based on conversation context
-        sql_messages = [
-            HumanMessage(content=sql_context_prompt.format(
-                history=history,
-                question=user_question
-            ))
-        ]
-        sql_response = llm.invoke(sql_messages)
-        sql_query = sql_response.content.strip()
-        
-        # Step 2: Execute the query
-        try:
-            result = db.run(sql_query)
-        except Exception as e:
-            response = f"Error executing query: {str(e)}"
-            memory.append(response)
-            return response
-        
-        # Step 3: Generate the final response
-        response_messages = [
-            HumanMessage(content=response_context_prompt.format(
-                history=history,
-                question=user_question,
-                query=sql_query,
-                result=result
-            ))
-        ]
-        final_response = llm.invoke(response_messages)
-        
-        # Add response to memory
-        memory.append(final_response.content)
-        
-        return final_response.content
+    # Check if query is valid
+    is_valid = "VALID" in validation_result.upper()
     
-    return chat
+    # Update state
+    return {**state, "sql_validation": is_valid, "validation_message": validation_result}
+
+def execute_query(state: ChatbotState) -> ChatbotState:
+    """Execute the SQL query on the database"""
+    try:
+        # Execute query
+        db_results = db.run(state["sql_query"])
+        
+        # Update state
+        return {**state, "db_results": db_results}
+    except Exception as e:
+        # Handle query execution error
+        return {**state, "sql_validation": False, "validation_message": f"Error executing query: {str(e)}"}
+
+def generate_response(state: ChatbotState) -> ChatbotState:
+    """Generate natural language response based on DB results"""
+    # Format prompt with user query, chat history, and DB results
+    history_str = format_chat_history(state["chat_history"])
+    
+    # Prompt template for response generation
+    prompt = f"""
+    Given the following chat history:
+    {history_str}
+    
+    User's current query: {state["current_query"]}
+    
+    Database results: {state["db_results"]}
+    
+    Generate a natural language response that answers the user's question based on the database results.
+    Be conversational and concise.
+    """
+    
+    # Generate response
+    response = response_generator_llm.invoke(prompt)
+    
+    # Add new message to chat history
+    new_history = state["chat_history"] + [
+        {"role": "human", "content": state["current_query"]},
+        {"role": "ai", "content": response}
+    ]
+    
+    # Update state
+    return {**state, "chat_history": new_history, "response": response}
+
+def format_chat_history(history: List[Dict[str, Any]]) -> str:
+    """Format chat history into a string for prompt context"""
+    if not history:
+        return "No previous conversation."
+        
+    formatted = []
+    for msg in history:
+        role = "User" if msg["role"] == "human" else "Assistant"
+        formatted.append(f"{role}: {msg['content']}")
+    
+    return "\n".join(formatted)
+
+# Decision-making functions for routing
+def should_regenerate_sql(state: ChatbotState) -> str:
+    """Decide whether to regenerate SQL or continue"""
+    if not state["sql_validation"] and state["attempt_count"] < 3:
+        return "regenerate_sql"
+    elif not state["sql_validation"]:
+        return "max_attempts"
+    else:
+        return "execute_query"
+
+def handle_max_attempts(state: ChatbotState) -> ChatbotState:
+    """Handle case when max SQL generation attempts reached"""
+    error_response = "I'm having trouble generating a valid SQL query for your question. Could you please rephrase or provide more details?"
+    
+    # Add new message to chat history
+    new_history = state["chat_history"] + [
+        {"role": "human", "content": state["current_query"]},
+        {"role": "ai", "content": error_response}
+    ]
+    
+    # Update state
+    return {**state, "chat_history": new_history, "response": error_response}
+
+# Build the graph
+def build_graph() -> StateGraph:
+    """Build the LangGraph workflow"""
+    # Initialize graph
+    graph = StateGraph(ChatbotState)
+    
+    # Add nodes
+    graph.add_node("generate_sql", generate_sql)
+    graph.add_node("validate_sql", validate_sql)
+    graph.add_node("execute_query", execute_query)
+    graph.add_node("generate_response", generate_response)
+    graph.add_node("handle_max_attempts", handle_max_attempts)
+    
+    # Set entry point
+    graph.set_entry_point("generate_sql")
+    
+    # Add edges
+    graph.add_edge("generate_sql", "validate_sql")
+    
+    # Add conditional edges from validate_sql
+    graph.add_conditional_edges(
+        "validate_sql",
+        should_regenerate_sql,
+        {
+            "regenerate_sql": "generate_sql",
+            "execute_query": "execute_query",
+            "max_attempts": "handle_max_attempts"
+        }
+    )
+    
+    graph.add_edge("execute_query", "generate_response")
+    
+    # Set exit points
+    graph.add_edge("generate_response", END)
+    graph.add_edge("handle_max_attempts", END)
+    
+    return graph
+
+# Create the chatbot class
+class OracleChatbot:
+    def __init__(self):
+        self.graph = build_graph().compile()
+        self.state = {
+            "chat_history": [],
+            "current_query": "",
+            "sql_query": None,
+            "sql_validation": None,
+            "db_results": None,
+            "attempt_count": 0,
+            "response": ""
+        }
+    
+    def query(self, user_input: str) -> str:
+        """Process a user query and return a response"""
+        # Update current query
+        self.state["current_query"] = user_input
+        self.state["attempt_count"] = 0
+        
+        # Run the graph
+        result = self.graph.invoke(self.state)
+        
+        # Update state with result
+        self.state = result
+        
+        # Return the response
+        return self.state["response"]
 
 # Example usage
-def main():
-    # Import your LLM with invoke method
-    from your_llm_module import YourBaseChatModel
-    
-    # Initialize your LLM
-    llm = YourBaseChatModel()
-    
-    # Method 1: Simple one-shot chatbot
-    simple_bot = create_simple_oracle_chatbot(llm)
-    response = simple_bot("What is the average sales amount?")
-    print("Simple Bot Response:", response)
-    
-    # Method 2: Conversational chatbot
-    chat_bot = create_conversational_oracle_chatbot(llm)
+if __name__ == "__main__":
+    chatbot = OracleChatbot()
     
     # Example conversation
-    print("\nConversational Bot:")
-    response1 = chat_bot("What is the average sales amount?")
-    print("User: What is the average sales amount?")
-    print("Bot:", response1)
+    queries = [
+        "How many customers do we have in California?",
+        "What about in New York?",
+        "Which one had the highest sales last month?"
+    ]
     
-    response2 = chat_bot("What are the top 3 highest sales values?")
-    print("User: What are the top 3 highest sales values?")
-    print("Bot:", response2)
-    
-    response3 = chat_bot("What is name of the customers which contributed to these sales?")
-    print("User: What is name of the customers which contributed to these sales?")
-    print("Bot:", response3)
-
-if __name__ == "__main__":
-    main()
-
-
-# Avoid unsupported keywords like LIMIT, OFFSET, AUTO_INCREMENT, BOOLEAN, TEXT, DATETIME, and IF EXISTS. Use FETCH FIRST N ROWS ONLY instead of LIMIT, SEQUENCE instead of AUTO_INCREMENT, and SYSTIMESTAMP instead of NOW(). Ensure proper Oracle SQL syntax
+    for query in queries:
+        print(f"\nUser: {query}")
+        response = chatbot.query(query)
+        print(f"Assistant: {response}")
