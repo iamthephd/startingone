@@ -1,144 +1,187 @@
-import requests
-from typing import List, Dict, Any, Optional, Sequence, Union
-from pydantic import Field
-from langchain.schema import BaseChatModel, ChatResult, AIMessage, ChatGeneration, BaseMessage
-from langchain.callbacks.manager import CallbackManagerForLLMRun
-from langchain.tools import BaseTool
+import os
+from typing import List, Dict, Any, Optional
+from langchain.chains import SQLDatabaseChain
+from langchain.sql_database import SQLDatabase
+from langchain.memory import ConversationBufferMemory
+from langchain.prompts import PromptTemplate
+from langchain.chains import ConversationChain
+from langchain.schema import BaseMessage, HumanMessage, AIMessage
 
-class CustomEndpointLLM(BaseChatModel):
-    """Custom Chat Model that makes requests to an endpoint.
-    Args:
-        endpoint_url (str): The URL of the LLM endpoint
-        model (str): Model identifier to use
-        temperature (float, optional): Sampling temperature. Defaults to 0.7
-        max_tokens (int, optional): Maximum number of tokens to generate. Defaults to 256
-        top_p (float, optional): Nucleus sampling parameter. Defaults to 1.0
-    """
-    endpoint_url: str = Field(..., description="URL of the LLM endpoint")
-    model: str = Field(..., description="Model identifier to use")
-    temperature: float = Field(0.7, description="Sampling temperature")
-    max_tokens: int = Field(2000, description="Maximum number of tokens to generate")
-    top_p: float = Field(1.0, description="Nucleus sampling parameter")
+# Setup Oracle DB connection
+def get_oracle_db():
+    # Replace with your Oracle connection details
+    oracle_connection_string = "oracle+cx_oracle://username:password@hostname:port/service_name"
+    return SQLDatabase.from_uri(oracle_connection_string)
 
-    def _generate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        """Generate chat response.
-        Args:
-            messages: List of messages in the conversation
-            stop: Stop sequences (not implemented)
-            run_manager: Callback manager
-            **kwargs: Additional arguments to pass to the endpoint
-        """
-        if stop is not None:
-            raise ValueError("Stop sequences are not supported")
-        # Convert messages to a prompt string
-        prompt = "\n".join([msg.content for msg in messages])
-        # Prepare the request payload
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-            "top_p": self.top_p,
-        }
-        try:
-            # Request to the endpoint
-            response = requests.post(self.endpoint_url, json=payload)
-            response.raise_for_status()
-            # Parse the response
-            result = response.json()["choices"][0]
-            # Extract the generated text - adjust the key based on your API response structure
-            # Assuming the response has a structure like {"text": "generated text"}
-            if "text" in result:
-                generated_text = result["text"].strip()
-            else:
-                raise ValueError(f"Unexpected response format: {result}")
-            # Create a ChatGeneration object
-            message = AIMessage(content=generated_text)
-            generation = ChatGeneration(message=message)
-            return ChatResult(generations=[generation])
-        except requests.exceptions.RequestException as e:
-            raise ValueError(f"Error making request to endpoint: {str(e)}")
-
-    def bind_tools(
-        self, tools: Sequence[BaseTool], tool_choice: Optional[Union[str, Dict]] = None
-    ) -> BaseChatModel:
-        """Bind tools to the model.
-        
-        Args:
-            tools: The tools to bind to the model
-            tool_choice: The tool choice configuration, if any
-            
-        Returns:
-            The model with bound tools
-        """
-        # Since the endpoint doesn't directly support tools, we'll create a wrapper
-        # that injects tool descriptions into the prompt
-        
-        class CustomEndpointLLMWithTools(CustomEndpointLLM):
-            _tools = list(tools)
-            _tool_choice = tool_choice
-            
-            def _generate(
-                self,
-                messages: List[BaseMessage],
-                stop: Optional[List[str]] = None,
-                run_manager: Optional[CallbackManagerForLLMRun] = None,
-                **kwargs: Any,
-            ) -> ChatResult:
-                # Create a modified version of the messages that includes tool descriptions
-                modified_messages = list(messages)
-                
-                # Create tool descriptions for the prompt
-                tool_descriptions = "\n\nAvailable tools:\n"
-                for tool in self._tools:
-                    tool_descriptions += f"- {tool.name}: {tool.description}\n"
-                
-                if tool_choice:
-                    tool_choice_info = f"\nPreferred tool to use: {self._tool_choice}\n"
-                    tool_descriptions += tool_choice_info
-                
-                # Add tool instructions to the system message or create a new one
-                system_message_found = False
-                for i, message in enumerate(modified_messages):
-                    if hasattr(message, "type") and message.type == "system":
-                        modified_messages[i].content += tool_descriptions
-                        system_message_found = True
-                        break
-                
-                if not system_message_found and len(modified_messages) > 0:
-                    # Add to the first message
-                    modified_messages[0].content = tool_descriptions + "\n" + modified_messages[0].content
-                
-                # Call the parent _generate method with modified messages
-                return super()._generate(modified_messages, stop, run_manager, **kwargs)
-        
-        # Return a new instance with the same configuration
-        return CustomEndpointLLMWithTools(
-            endpoint_url=self.endpoint_url,
-            model=self.model,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            top_p=self.top_p
-        )
-            
-    @property
-    def llm_type(self) -> str:
-        """Return type of LLM."""
-        return "custom_endpoint"
+# Method 1: Simple one-shot query without follow-up capability
+def create_simple_oracle_chatbot(llm):
+    db = get_oracle_db()
     
-    @property
-    def identifying_params(self) -> Dict[str, Any]:
-        """Get the identifying parameters."""
-        return {
-            "model_name": self.model,
-            "endpoint_url": self.endpoint_url,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "top_p": self.top_p,
-        }
+    # Create a prompt template for SQL generation
+    sql_prompt = """
+    You are an AI assistant that helps users query an Oracle database.
+    Based on the user's question, generate the appropriate SQL query.
+    The database has tables for customers, sales, products, and more.
+    
+    User Question: {question}
+    
+    SQL Query:
+    """
+    
+    # Create a prompt template for generating the final response
+    response_prompt = """
+    You are an AI assistant that helps users understand data from an Oracle database.
+    Given the user's question and the SQL query results, provide a clear, concise answer.
+    
+    User Question: {question}
+    SQL Query: {query}
+    SQL Result: {result}
+    
+    Your Response:
+    """
+    
+    def query_database(user_question):
+        # Step 1: Generate SQL query
+        sql_messages = [HumanMessage(content=sql_prompt.format(question=user_question))]
+        sql_response = llm.invoke(sql_messages)
+        sql_query = sql_response.content.strip()
+        
+        # Step 2: Execute the query
+        try:
+            result = db.run(sql_query)
+        except Exception as e:
+            return f"Error executing query: {str(e)}"
+        
+        # Step 3: Generate the final response
+        response_messages = [
+            HumanMessage(content=response_prompt.format(
+                question=user_question,
+                query=sql_query,
+                result=result
+            ))
+        ]
+        final_response = llm.invoke(response_messages)
+        return final_response.content
+    
+    return query_database
+
+# Method 2: Conversational bot with follow-up capability
+def create_conversational_oracle_chatbot(llm):
+    db = get_oracle_db()
+    
+    # Create memory to store conversation history
+    memory = []
+    
+    # Create a prompt template for SQL generation with context
+    sql_context_prompt = """
+    You are an AI assistant that helps users query an Oracle database.
+    Based on the user's question and the conversation history, generate the appropriate SQL query.
+    The database has tables for customers, sales, products, and more.
+    
+    Conversation History:
+    {history}
+    
+    Current User Question: {question}
+    
+    SQL Query:
+    """
+    
+    # Create a prompt template for generating the final response
+    response_context_prompt = """
+    You are an AI assistant that helps users understand data from an Oracle database.
+    Given the conversation history, the user's question, and the SQL query results, provide a clear, concise answer.
+    
+    Conversation History:
+    {history}
+    
+    Current User Question: {question}
+    SQL Query: {query}
+    SQL Result: {result}
+    
+    Your Response:
+    """
+    
+    def format_history(memory_list):
+        formatted = ""
+        for i, message in enumerate(memory_list):
+            role = "User" if i % 2 == 0 else "Assistant"
+            formatted += f"{role}: {message}\n"
+        return formatted
+    
+    def chat(user_question):
+        # Add user question to memory
+        if len(memory) > 0:  # Not the first question
+            memory.append(user_question)
+            history = format_history(memory[:-1])  # Exclude current question from history
+        else:
+            memory.append(user_question)
+            history = ""
+        
+        # Step 1: Generate SQL query based on conversation context
+        sql_messages = [
+            HumanMessage(content=sql_context_prompt.format(
+                history=history,
+                question=user_question
+            ))
+        ]
+        sql_response = llm.invoke(sql_messages)
+        sql_query = sql_response.content.strip()
+        
+        # Step 2: Execute the query
+        try:
+            result = db.run(sql_query)
+        except Exception as e:
+            response = f"Error executing query: {str(e)}"
+            memory.append(response)
+            return response
+        
+        # Step 3: Generate the final response
+        response_messages = [
+            HumanMessage(content=response_context_prompt.format(
+                history=history,
+                question=user_question,
+                query=sql_query,
+                result=result
+            ))
+        ]
+        final_response = llm.invoke(response_messages)
+        
+        # Add response to memory
+        memory.append(final_response.content)
+        
+        return final_response.content
+    
+    return chat
+
+# Example usage
+def main():
+    # Import your LLM with invoke method
+    from your_llm_module import YourBaseChatModel
+    
+    # Initialize your LLM
+    llm = YourBaseChatModel()
+    
+    # Method 1: Simple one-shot chatbot
+    simple_bot = create_simple_oracle_chatbot(llm)
+    response = simple_bot("What is the average sales amount?")
+    print("Simple Bot Response:", response)
+    
+    # Method 2: Conversational chatbot
+    chat_bot = create_conversational_oracle_chatbot(llm)
+    
+    # Example conversation
+    print("\nConversational Bot:")
+    response1 = chat_bot("What is the average sales amount?")
+    print("User: What is the average sales amount?")
+    print("Bot:", response1)
+    
+    response2 = chat_bot("What are the top 3 highest sales values?")
+    print("User: What are the top 3 highest sales values?")
+    print("Bot:", response2)
+    
+    response3 = chat_bot("What is name of the customers which contributed to these sales?")
+    print("User: What is name of the customers which contributed to these sales?")
+    print("Bot:", response3)
+
+if __name__ == "__main__":
+    main()
