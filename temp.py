@@ -57,3 +57,65 @@ def analyze_variance_contributors(db, reason_code_tuples: List[Tuple[str, str]])
         results[(reason_code, comparison_type)] = top_contributors
 
     return results
+
+
+
+def analyze_variance_contributors(db, reason_code_tuples):
+    results = {}
+
+    # Fetch distinct sorted quarters from database
+    query_quarters = """
+        SELECT DISTINCT Date FROM transactions ORDER BY Date ASC
+    """
+    sorted_quarters = [row[0] for row in db.run(query_quarters)]
+
+    if len(sorted_quarters) < 2:
+        raise ValueError("Not enough quarters available for comparison.")
+
+    # Define base and compare quarters dynamically
+    yy_base_quarter, yy_compare_quarter = sorted_quarters[0], sorted_quarters[-1]
+    qq_base_quarter, qq_compare_quarter = sorted_quarters[-2], sorted_quarters[-1]
+
+    # Process each Reason_Code and comparison type
+    for reason_code, comparison_type in reason_code_tuples:
+        if comparison_type not in ["Y/Y $", "Q/Q $"]:
+            raise ValueError(f"Invalid comparison type: {comparison_type}")
+
+        # Assign correct quarters
+        if comparison_type == "Y/Y $":
+            base_quarter, compare_quarter = yy_base_quarter, yy_compare_quarter
+        else:  # "Q/Q $"
+            base_quarter, compare_quarter = qq_base_quarter, qq_compare_quarter
+
+        # Fetch top 3 attribute differences directly in SQL
+        query_attribute_diffs = f"""
+            WITH base_data AS (
+                SELECT Attribute, SUM(Amount) AS base_amount
+                FROM transactions
+                WHERE Reason_Code = '{reason_code}' AND Date = '{base_quarter}'
+                GROUP BY Attribute
+            ),
+            compare_data AS (
+                SELECT Attribute, SUM(Amount) AS compare_amount
+                FROM transactions
+                WHERE Reason_Code = '{reason_code}' AND Date = '{compare_quarter}'
+                GROUP BY Attribute
+            ),
+            differences AS (
+                SELECT 
+                    COALESCE(b.Attribute, c.Attribute) AS Attribute,
+                    COALESCE(c.compare_amount, 0) - COALESCE(b.base_amount, 0) AS diff
+                FROM base_data b
+                FULL OUTER JOIN compare_data c ON b.Attribute = c.Attribute
+            )
+            SELECT Attribute, diff
+            FROM differences
+            WHERE diff <> 0
+            ORDER BY ABS(diff) DESC
+            FETCH FIRST 3 ROWS ONLY
+        """
+
+        top_contributors = {row[0]: row[1] for row in db.run(query_attribute_diffs)}
+        results[(reason_code, comparison_type)] = top_contributors
+
+    return results
