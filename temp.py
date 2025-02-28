@@ -1,9 +1,59 @@
-from langchain_community.utilities.sql_database import SQLDatabase
 from typing import List, Tuple, Dict, Any
+from decimal import Decimal
+import ast
 import re
 
+def process_query_results(rows_str: str) -> List[Tuple[str, float]]:
+    """
+    Process the string output from database query into a list of tuples with Python data types.
+    
+    Args:
+        rows_str: String representation of query results in format "[('Attribute_Value', Decimal('-21434123.234231'), ...]"
+    
+    Returns:
+        List of tuples with attribute and difference value as (attribute, difference)
+    """
+    # Check if rows_str is empty
+    if not rows_str or rows_str.strip() == "[]":
+        return []
+    
+    try:
+        # Method 1: Try to convert string to Python object using ast.literal_eval
+        # This works if the string is a valid Python literal representation
+        processed_rows = []
+        
+        # Clean the string to make it compatible with literal_eval
+        # Replace Decimal objects with their string representation
+        rows_cleaned = re.sub(r'Decimal\([\'"](-?\d+\.?\d*?)[\'"]\)', r"'\1'", rows_str)
+        
+        # Parse the string as a Python literal
+        rows_list = ast.literal_eval(rows_cleaned)
+        
+        # Extract attribute and difference values
+        for row in rows_list:
+            if len(row) >= 2:
+                attribute = row[0]
+                # Convert string or Decimal to float
+                difference = float(row[1]) if isinstance(row[1], (str, Decimal)) else row[1]
+                processed_rows.append((attribute, difference))
+        
+        return processed_rows
+        
+    except (SyntaxError, ValueError):
+        # Method 2: Parse the string manually if literal_eval fails
+        processed_rows = []
+        
+        # Regular expression to extract tuples
+        pattern = r"\('([^']+)',\s*(?:Decimal\(['\"])?(-?\d+\.?\d*?)(?:['\"])?\)"
+        matches = re.findall(pattern, rows_str)
+        
+        for attribute, difference in matches:
+            processed_rows.append((attribute, float(difference)))
+        
+        return processed_rows
+
 def get_top_attributes_by_difference(
-    db: SQLDatabase,
+    db: Any,
     comparison_tuples: List[Tuple[str, str]],
     table_name: str
 ) -> Dict[Tuple[str, str], Dict[str, float]]:
@@ -61,33 +111,11 @@ def get_top_attributes_by_difference(
         # Execute query
         rows = db.run(query)
         
-        # Parse results and format into dictionary
-        attributes_diff = {}
+        # Process the query results
+        processed_rows = process_query_results(rows)
         
-        # Oracle's SQLPlus output format typically includes headers and formatting
-        # We need to parse this properly
-        row_pattern = re.compile(r'(\S+)\s+(-?\d+\.?\d*)')
-        for line in rows.strip().split('\n'):
-            if line and not line.startswith('----') and 'ATTRIBUTE' not in line:
-                match = row_pattern.search(line)
-                if match:
-                    attribute = match.group(1)
-                    difference = float(match.group(2))
-                    attributes_diff[attribute] = difference
-        
-        # Alternative parsing if the above doesn't work (depends on how db.run returns data)
-        if not attributes_diff:
-            lines = rows.strip().split('\n')
-            if len(lines) > 1:  # Skip header row
-                for line in lines[1:]:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        attribute = parts[0]
-                        try:
-                            difference = float(parts[-1])
-                            attributes_diff[attribute] = difference
-                        except ValueError:
-                            pass
+        # Convert to required dictionary format
+        attributes_diff = {attr: diff for attr, diff in processed_rows}
         
         # Store results
         result[(reason_code, comparison_type)] = attributes_diff
