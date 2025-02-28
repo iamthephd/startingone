@@ -1,19 +1,6 @@
 from typing import List, Tuple, Dict
-import cx_Oracle  # Or another Oracle DB connector
 
 def analyze_variance_contributors(db, reason_code_tuples: List[Tuple[str, str]]):
-    # Check if the required table exists with required columns
-    validation_query = """
-    SELECT column_name 
-    FROM user_tab_columns 
-    WHERE table_name = 'YOUR_TABLE_NAME' 
-    AND column_name IN ('DATE', 'ATTRIBUTE', 'AMOUNT', 'REASON_CODE')
-    """
-    columns = [row[0] for row in db.run(validation_query)]
-    required_columns = {'DATE', 'ATTRIBUTE', 'AMOUNT', 'REASON_CODE'}
-    if not required_columns.issubset(set(columns)):
-        raise ValueError(f"Database table missing required columns: {required_columns - set(columns)}")
-    
     results = {}  # Initialize results dictionary
     
     # Process each Reason_Code and comparison type pair
@@ -43,19 +30,20 @@ def analyze_variance_contributors(db, reason_code_tuples: List[Tuple[str, str]])
 
 def calculate_attribute_differences(db, reason_code: str, base_quarter: str, compare_quarter: str) -> Dict[str, float]:
     # SQL query to calculate differences for each attribute in one query
-    difference_query = """
+    # Using string formatting instead of parameter binding
+    difference_query = f"""
     WITH base_amounts AS (
         SELECT ATTRIBUTE, SUM(AMOUNT) AS base_amount
         FROM YOUR_TABLE_NAME
-        WHERE REASON_CODE = :reason_code
-        AND DATE = :base_quarter
+        WHERE REASON_CODE = '{reason_code}'
+        AND DATE = '{base_quarter}'
         GROUP BY ATTRIBUTE
     ),
     compare_amounts AS (
         SELECT ATTRIBUTE, SUM(AMOUNT) AS compare_amount
         FROM YOUR_TABLE_NAME
-        WHERE REASON_CODE = :reason_code
-        AND DATE = :compare_quarter
+        WHERE REASON_CODE = '{reason_code}'
+        AND DATE = '{compare_quarter}'
         GROUP BY ATTRIBUTE
     )
     SELECT 
@@ -68,11 +56,8 @@ def calculate_attribute_differences(db, reason_code: str, base_quarter: str, com
         NVL(c.compare_amount, 0) - NVL(b.base_amount, 0) != 0
     """
     
-    # Execute query with parameters
-    cursor = db.run(difference_query, 
-                    reason_code=reason_code, 
-                    base_quarter=base_quarter, 
-                    compare_quarter=compare_quarter)
+    # Execute query
+    cursor = db.run(difference_query)
     
     # Convert results to dictionary
     differences = {}
