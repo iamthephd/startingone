@@ -27,3 +27,23 @@ Output:
 
 Now, analyze the following dataset and return the set of tuples for significant values:
 """
+
+def convert_indices_to_names(df, index_set):
+    """
+    Converts {(row_index, col_index), ...} to [(index_name, col_name), ...]
+    using index names and column names from the dataframe.
+    """
+    try:
+        # Convert index positions to actual index names
+        index_mapping = {i: idx_name for i, idx_name in enumerate(df.index)}
+
+        # Convert column positions to actual column names
+        column_mapping = {i: col_name for i, col_name in enumerate(df.columns)}
+
+        # Replace row indices and column indices with actual names
+        converted_list = [(index_mapping[row], column_mapping[col]) for row, col in index_set if row in index_mapping and col in column_mapping]
+
+        return converted_list
+    except Exception as e:
+        print(f"Error converting indices to names: {e}")
+        return []  # Return empty list in case of failure
