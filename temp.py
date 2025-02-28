@@ -1,49 +1,61 @@
-system_message = """
-You are an expert data analyst. Your task is to identify the most significant values 
-in the given dataset. A significant value is an extreme positive or negative number 
-that stands out in its context.
+from typing import List, Tuple, Dict
 
-You will be provided with a dataset containing only two columns: 'Sales' and 'Revenue'.
-Your output should be a **set of tuples** in the format {(row_index, col_name), ...}.
+def get_comparison_quarters(db) -> Dict[str, Tuple[str, str]]:
+    """Fetches distinct Date values, sorts them, and determines base and compare quarters."""
+    query = 'SELECT DISTINCT "Date" FROM your_table ORDER BY "Date" ASC'
+    sorted_dates = [row[0] for row in db.run(query)]  # Extract dates from query result
 
-### Criteria for Significance:
-- Extreme positive or negative values should be considered significant.
-- The number of significant values is not fixed; it depends on the dataset.
+    if len(sorted_dates) < 2:
+        raise ValueError("Not enough dates for comparison.")
 
-### Examples:
+    return {
+        "Y/Y $": (sorted_dates[0], sorted_dates[-1]),
+        "Q/Q $": (sorted_dates[-2], sorted_dates[-1])
+    }
 
-Input:
-[
-    {"row_index": 0, "Sales": 27, "Revenue": 1},
-    {"row_index": 1, "Sales": -6, "Revenue": -18},
-    {"row_index": 2, "Sales": 0, "Revenue": 25},
-    {"row_index": 3, "Sales": 0, "Revenue": -1},
-    {"row_index": 4, "Sales": -31, "Revenue": 3},
-    {"row_index": 5, "Sales": -7, "Revenue": -29}
-]
-
-Output:
-{(0, "Sales"), (1, "Revenue"), (2, "Revenue"), (4, "Sales"), (5, "Revenue")}
-
-Now, analyze the following dataset and return the set of tuples for significant values:
-"""
-
-def convert_indices_to_names(df, index_set):
+def fetch_reason_data(db, reason_code: str):
+    """Fetches data for the specified reason_code from the database."""
+    query = f"""
+        SELECT "Date", "Attribute", "Amount"
+        FROM your_table
+        WHERE "Reason_Code" = '{reason_code}'
     """
-    Converts {(row_index, col_index), ...} to [(index_name, col_name), ...]
-    using index names and column names from the dataframe.
-    """
-    try:
-        # Convert index positions to actual index names
-        index_mapping = {i: idx_name for i, idx_name in enumerate(df.index)}
+    return db.run(query)  # Returns list of tuples (Date, Attribute, Amount)
 
-        # Convert column positions to actual column names
-        column_mapping = {i: col_name for i, col_name in enumerate(df.columns)}
+def calculate_attribute_differences(data, base_quarter: str, compare_quarter: str) -> Dict[str, float]:
+    """Calculates differences in attributes between base and compare quarters."""
+    differences = {}
 
-        # Replace row indices and column indices with actual names
-        converted_list = [(index_mapping[row], column_mapping[col]) for row, col in index_set if row in index_mapping and col in column_mapping]
+    for attribute in set(row[1] for row in data):  # Unique attributes
+        base_amount = sum(row[2] for row in data if row[0] == base_quarter and row[1] == attribute)
+        compare_amount = sum(row[2] for row in data if row[0] == compare_quarter and row[1] == attribute)
+        
+        diff = compare_amount - base_amount
+        if diff != 0:
+            differences[attribute] = diff
 
-        return converted_list
-    except Exception as e:
-        print(f"Error converting indices to names: {e}")
-        return []  # Return empty list in case of failure
+    return differences
+
+def get_top_contributors(differences: Dict[str, float]) -> Dict[str, float]:
+    """Sorts by absolute value and returns the top 3 contributors."""
+    sorted_diffs = sorted(differences.items(), key=lambda x: abs(x[1]), reverse=True)
+    return dict(sorted_diffs[:3])
+
+def analyze_variance_contributors(db, reason_code_tuples: List[Tuple[str, str]]):
+    """Main function to analyze variance contributors for different reason codes."""
+    results = {}
+    quarters = get_comparison_quarters(db)  # Fetch base and compare quarters
+
+    for reason_code, comparison_type in reason_code_tuples:
+        if comparison_type not in quarters:
+            raise ValueError(f"Invalid comparison type: {comparison_type}")
+
+        base_quarter, compare_quarter = quarters[comparison_type]
+        reason_data = fetch_reason_data(db, reason_code)
+
+        attribute_diffs = calculate_attribute_differences(reason_data, base_quarter, compare_quarter)
+        top_contributors = get_top_contributors(attribute_diffs)
+
+        results[(reason_code, comparison_type)] = top_contributors
+
+    return results
