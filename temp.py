@@ -9,32 +9,30 @@ def get_comparison_quarters(db) -> Dict[str, Tuple[str, str]]:
         raise ValueError("Not enough dates for comparison.")
 
     return {
-        "Y/Y $": (sorted_dates[0], sorted_dates[-1]),
-        "Q/Q $": (sorted_dates[-2], sorted_dates[-1])
+        "Y/Y $": (sorted_dates[0], sorted_dates[-1]),  # Oldest and newest quarters
+        "Q/Q $": (sorted_dates[-2], sorted_dates[-1])  # Last two quarters
     }
 
-def fetch_reason_data(db, reason_code: str):
-    """Fetches data for the specified reason_code from the database."""
+def fetch_reason_data(db, reason_code: str, base_quarter: str, compare_quarter: str):
+    """Fetches data for the specified reason_code and quarters."""
     query = f"""
-        SELECT "Date", "Attribute", "Amount"
+        SELECT "Date", "Attribute", SUM("Amount") as total_amount
         FROM your_table
-        WHERE "Reason_Code" = '{reason_code}'
+        WHERE "Reason_Code" = '{reason_code}' 
+          AND "Date" IN ('{base_quarter}', '{compare_quarter}')
+        GROUP BY "Date", "Attribute"
     """
     return db.run(query)  # Returns list of tuples (Date, Attribute, Amount)
 
 def calculate_attribute_differences(data, base_quarter: str, compare_quarter: str) -> Dict[str, float]:
     """Calculates differences in attributes between base and compare quarters."""
-    differences = {}
+    base_values = {row[1]: row[2] for row in data if row[0] == base_quarter}  # {Attribute: Amount}
+    compare_values = {row[1]: row[2] for row in data if row[0] == compare_quarter}
 
-    for attribute in set(row[1] for row in data):  # Unique attributes
-        base_amount = sum(row[2] for row in data if row[0] == base_quarter and row[1] == attribute)
-        compare_amount = sum(row[2] for row in data if row[0] == compare_quarter and row[1] == attribute)
-        
-        diff = compare_amount - base_amount
-        if diff != 0:
-            differences[attribute] = diff
+    differences = {attr: compare_values.get(attr, 0) - base_values.get(attr, 0) 
+                   for attr in set(base_values) | set(compare_values)}
 
-    return differences
+    return {attr: diff for attr, diff in differences.items() if diff != 0}  # Remove zero differences
 
 def get_top_contributors(differences: Dict[str, float]) -> Dict[str, float]:
     """Sorts by absolute value and returns the top 3 contributors."""
@@ -51,7 +49,7 @@ def analyze_variance_contributors(db, reason_code_tuples: List[Tuple[str, str]])
             raise ValueError(f"Invalid comparison type: {comparison_type}")
 
         base_quarter, compare_quarter = quarters[comparison_type]
-        reason_data = fetch_reason_data(db, reason_code)
+        reason_data = fetch_reason_data(db, reason_code, base_quarter, compare_quarter)
 
         attribute_diffs = calculate_attribute_differences(reason_data, base_quarter, compare_quarter)
         top_contributors = get_top_contributors(attribute_diffs)
