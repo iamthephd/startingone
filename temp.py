@@ -1,78 +1,95 @@
-from typing import List, Tuple, Dict
+from langchain_community.utilities.sql_database import SQLDatabase
+from typing import List, Tuple, Dict, Any
+import re
 
-def analyze_variance_contributors(db, reason_code_tuples: List[Tuple[str, str]]):
-    results = {}  # Initialize results dictionary
+def get_top_attributes_by_difference(
+    db: SQLDatabase,
+    comparison_tuples: List[Tuple[str, str]],
+    table_name: str
+) -> Dict[Tuple[str, str], Dict[str, float]]:
+    """
+    Get top 3 attributes by difference (Y/Y $ or Q/Q $) for specified reason codes.
     
-    # Process each Reason_Code and comparison type pair
-    for reason_code, comparison_type in reason_code_tuples:
-        # Validate the comparison type
-        if comparison_type not in {"Y/Y $", "Q/Q $"}:
-            raise ValueError(f"Invalid comparison type: {comparison_type}")
-        
-        # Determine relevant quarters based on comparison type
+    Args:
+        db: SQLDatabase instance connected to Oracle
+        comparison_tuples: List of tuples with (reason_code, comparison_type)
+                          where comparison_type is either "Y/Y $" or "Q/Q $"
+        table_name: Name of the table containing the data
+    
+    Returns:
+        Dictionary with (reason_code, comparison_type) as keys and
+        dictionary of top 3 attributes with their differences as values
+    """
+    result = {}
+    
+    for reason_code, comparison_type in comparison_tuples:
+        # Determine comparison quarters based on type
         if comparison_type == "Y/Y $":
-            base_quarter = "2024Q1"
-            compare_quarter = "2025Q1"
-        else:  # Q/Q $
-            base_quarter = "2024Q4"
-            compare_quarter = "2025Q1"
+            current_period = "2025Q1"
+            previous_period = "2024Q1"
+        elif comparison_type == "Q/Q $":
+            current_period = "2025Q1"
+            previous_period = "2024Q4"
+        else:
+            raise ValueError(f"Unsupported comparison type: {comparison_type}")
         
-        # Calculate differences for each attribute using SQL
-        attribute_diffs = calculate_attribute_differences(db, reason_code, base_quarter, compare_quarter)
+        # Construct and execute SQL query to get attribute differences
+        query = f"""
+        WITH current_data AS (
+            SELECT "Attribute", SUM("Amount") as current_amount
+            FROM {table_name}
+            WHERE "Date" = '{current_period}'
+            AND "Reason_Code" = '{reason_code}'
+            GROUP BY "Attribute"
+        ),
+        previous_data AS (
+            SELECT "Attribute", SUM("Amount") as previous_amount
+            FROM {table_name}
+            WHERE "Date" = '{previous_period}'
+            AND "Reason_Code" = '{reason_code}'
+            GROUP BY "Attribute"
+        )
+        SELECT 
+            COALESCE(c."Attribute", p."Attribute") as attribute,
+            COALESCE(c.current_amount, 0) - COALESCE(p.previous_amount, 0) as difference
+        FROM current_data c
+        FULL OUTER JOIN previous_data p ON c."Attribute" = p."Attribute"
+        ORDER BY ABS(COALESCE(c.current_amount, 0) - COALESCE(p.previous_amount, 0)) DESC
+        FETCH FIRST 3 ROWS ONLY
+        """
         
-        # Get top 3 contributors
-        top_contributors = get_top_contributors(attribute_diffs)
+        # Execute query
+        rows = db.run(query)
+        
+        # Parse results and format into dictionary
+        attributes_diff = {}
+        
+        # Oracle's SQLPlus output format typically includes headers and formatting
+        # We need to parse this properly
+        row_pattern = re.compile(r'(\S+)\s+(-?\d+\.?\d*)')
+        for line in rows.strip().split('\n'):
+            if line and not line.startswith('----') and 'ATTRIBUTE' not in line:
+                match = row_pattern.search(line)
+                if match:
+                    attribute = match.group(1)
+                    difference = float(match.group(2))
+                    attributes_diff[attribute] = difference
+        
+        # Alternative parsing if the above doesn't work (depends on how db.run returns data)
+        if not attributes_diff:
+            lines = rows.strip().split('\n')
+            if len(lines) > 1:  # Skip header row
+                for line in lines[1:]:
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        attribute = parts[0]
+                        try:
+                            difference = float(parts[-1])
+                            attributes_diff[attribute] = difference
+                        except ValueError:
+                            pass
         
         # Store results
-        results[(reason_code, comparison_type)] = top_contributors
+        result[(reason_code, comparison_type)] = attributes_diff
     
-    return results
-
-def calculate_attribute_differences(db, reason_code: str, base_quarter: str, compare_quarter: str) -> Dict[str, float]:
-    # SQL query to calculate differences for each attribute in one query
-    # Using string formatting instead of parameter binding
-    difference_query = f"""
-    WITH base_amounts AS (
-        SELECT ATTRIBUTE, SUM(AMOUNT) AS base_amount
-        FROM YOUR_TABLE_NAME
-        WHERE REASON_CODE = '{reason_code}'
-        AND DATE = '{base_quarter}'
-        GROUP BY ATTRIBUTE
-    ),
-    compare_amounts AS (
-        SELECT ATTRIBUTE, SUM(AMOUNT) AS compare_amount
-        FROM YOUR_TABLE_NAME
-        WHERE REASON_CODE = '{reason_code}'
-        AND DATE = '{compare_quarter}'
-        GROUP BY ATTRIBUTE
-    )
-    SELECT 
-        COALESCE(b.ATTRIBUTE, c.ATTRIBUTE) AS ATTRIBUTE,
-        NVL(c.compare_amount, 0) - NVL(b.base_amount, 0) AS difference
-    FROM 
-        base_amounts b
-        FULL OUTER JOIN compare_amounts c ON b.ATTRIBUTE = c.ATTRIBUTE
-    WHERE 
-        NVL(c.compare_amount, 0) - NVL(b.base_amount, 0) != 0
-    """
-    
-    # Execute query
-    cursor = db.run(difference_query)
-    
-    # Convert results to dictionary
-    differences = {}
-    for row in cursor:
-        differences[row[0]] = row[1]
-    
-    return differences
-
-def get_top_contributors(differences: Dict[str, float]) -> Dict[str, float]:
-    # Sort by absolute value but keep original difference
-    sorted_diffs = sorted(
-        differences.items(),
-        key=lambda x: abs(x[1]),
-        reverse=True
-    )
-    
-    # Take top 3 and convert back to dictionary
-    return dict(sorted_diffs[:3])
+    return result
