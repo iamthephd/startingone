@@ -1,6 +1,6 @@
-import streamlit as st
 import pandas as pd
-import altair as alt
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # Assuming `db` is your database connection object
 
@@ -12,6 +12,7 @@ query1 = '''
     ORDER BY "Date";
 '''
 df_line = pd.DataFrame(db.run(query1))
+df_line["total_amount"] = df_line["total_amount"].astype(float) / 1e6  # Convert to millions
 
 # Query for Stacked Bar Chart
 query2 = '''
@@ -21,20 +22,25 @@ query2 = '''
     ORDER BY "Date", "Reason_Code";
 '''
 df_bar = pd.DataFrame(db.run(query2))
+df_bar["total_amount"] = df_bar["total_amount"].astype(float) / 1e6  # Convert to millions
+
+# Set up figure
+fig, ax = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
 
 # Line Chart
-st.subheader("Total Amount Over Time")
-chart_line = alt.Chart(df_line).mark_line().encode(
-    x="Date:T",
-    y="total_amount:Q"
-)
-st.altair_chart(chart_line, use_container_width=True)
+sns.lineplot(data=df_line, x="Date", y="total_amount", marker="o", ax=ax[0], color="b")
+ax[0].set_title("Total Amount Over Time", fontsize=14)
+ax[0].set_ylabel("Total Amount ($M)")
+ax[0].grid(True)
 
 # Stacked Bar Chart
-st.subheader("Total Amount Over Time by Reason Code")
-chart_bar = alt.Chart(df_bar).mark_bar().encode(
-    x="Date:T",
-    y="total_amount:Q",
-    color="Reason_Code:N"
-)
-st.altair_chart(chart_bar, use_container_width=True)
+sns.barplot(data=df_bar, x="Date", y="total_amount", hue="Reason_Code", ax=ax[1])
+ax[1].set_title("Total Amount Over Time by Reason Code", fontsize=14)
+ax[1].set_xlabel("Date")
+ax[1].set_ylabel("Total Amount ($M)")
+ax[1].legend(title="Reason Code", bbox_to_anchor=(1.05, 1), loc="upper left")
+ax[1].grid(True)
+
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
