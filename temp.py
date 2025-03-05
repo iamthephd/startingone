@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
-from utils import create_sample_dataframe, get_default_tuples
-
-def format_tuple(tup: Tuple[str, str, any]) -> str:
-    """Format tuple for display"""
-    return f"({tup[0]}, {tup[1]}, {tup[2]})"
+from typing import List, Tuple
+from utils.file_processor import process_file, SAMPLE_FILES
+from utils.insights_generator import generate_insights
+from utils.ppt_generator import generate_ppt
 
 def initialize_session_state():
     """Initialize session state variables if they don't exist"""
+    if 'file_selected' not in st.session_state:
+        st.session_state.file_selected = False
     if 'df' not in st.session_state:
-        st.session_state.df = create_sample_dataframe()
+        st.session_state.df = None
     if 'tuples' not in st.session_state:
         st.session_state.tuples = []
     if 'has_defaults' not in st.session_state:
@@ -18,6 +19,20 @@ def initialize_session_state():
         st.session_state.default_tuples = []
     if 'warning_message' not in st.session_state:
         st.session_state.warning_message = None
+    if 'insights' not in st.session_state:
+        st.session_state.insights = None
+
+def get_default_tuples(df: pd.DataFrame) -> List[Tuple[str, str, any]]:
+    """Generate default tuples from the DataFrame"""
+    if df is None:
+        return []
+    index_name = df.index[0]
+    column_name = df.columns[0]
+    return [(index_name, column_name, df.loc[index_name, column_name])]
+
+def format_tuple(tup: Tuple[str, str, any]) -> str:
+    """Format tuple for display"""
+    return f"({tup[0]}, {tup[1]}, {tup[2]})"
 
 def add_tuple(index_name: str, column_name: str):
     """Add a new tuple to the list"""
@@ -29,6 +44,8 @@ def add_tuple(index_name: str, column_name: str):
             return
         st.session_state.warning_message = None
         st.session_state.tuples.append(new_tuple)
+        # Clear previous insights when tuples change
+        st.session_state.insights = None
 
 def auto_select():
     """Add default tuples to the current selection"""
@@ -39,89 +56,136 @@ def auto_select():
         if tup not in st.session_state.tuples:
             st.session_state.tuples.append(tup)
 
+def handle_file_selection():
+    """Handle file selection and processing"""
+    st.session_state.file_selected = True
+    filename = st.session_state.selected_file
+    df = process_file(filename)
+    if df is not None:
+        st.session_state.df = df
+        st.session_state.tuples = []
+        st.session_state.has_defaults = False
+        st.session_state.warning_message = None
+        st.session_state.insights = None
+
 def main():
     st.set_page_config(page_title="DataFrame Tuple Manager", layout="wide")
-
-    # Initialize session state
     initialize_session_state()
 
     st.title("DataFrame Tuple Manager")
 
-    # Create two columns with custom width ratio
-    col1, col2 = st.columns([2, 1])
+    # File selection section
+    col_file, col_ok = st.columns([4, 1])
+    with col_file:
+        st.selectbox(
+            "Select a file",
+            options=list(SAMPLE_FILES.keys()),
+            key="selected_file"
+        )
+    with col_ok:
+        st.write("")  # Add spacing
+        if st.button("OK", use_container_width=True):
+            handle_file_selection()
 
-    # Display DataFrame in left column
-    with col1:
-        st.dataframe(st.session_state.df, use_container_width=True)
+    # Only show the rest of the interface after file selection
+    if st.session_state.file_selected and st.session_state.df is not None:
+        col1, col2 = st.columns([2, 1])
 
-    # All controls in right column
-    with col2:
-        # Controls header with Auto button
-        col_header, col_auto = st.columns([2, 1])
-        with col_header:
-            st.markdown("### Controls")
-        with col_auto:
-            if st.button("🎯 Auto", use_container_width=True):
-                auto_select()
+        # Display DataFrame in left column
+        with col1:
+            st.dataframe(st.session_state.df, use_container_width=True)
 
-        # Create side-by-side dropdowns and add button
-        col_index, col_column, col_add = st.columns([2, 2, 1])
+        # All controls in right column
+        with col2:
+            col_header, col_auto = st.columns([2, 1])
+            with col_header:
+                st.markdown("### Controls")
+            with col_auto:
+                if st.button("🎯 Auto", use_container_width=True):
+                    auto_select()
 
-        with col_index:
-            st.markdown("**Row Index**")
-            index_name = st.selectbox(
-                "Select Index",
-                options=st.session_state.df.index,
-                key="index_select",
-                label_visibility="collapsed"
+            # Create side-by-side dropdowns and add button
+            col_index, col_column, col_add = st.columns([2, 2, 1])
+
+            with col_index:
+                st.markdown("**Row Index**")
+                index_name = st.selectbox(
+                    "Select Index",
+                    options=st.session_state.df.index,
+                    key="index_select",
+                    label_visibility="collapsed"
+                )
+
+            with col_column:
+                st.markdown("**Column Name**")
+                column_name = st.selectbox(
+                    "Select Column",
+                    options=st.session_state.df.columns,
+                    key="column_select",
+                    label_visibility="collapsed"
+                )
+
+            with col_add:
+                st.markdown("&nbsp;")
+                if st.button("➕ Add", use_container_width=True):
+                    add_tuple(index_name, column_name)
+
+            # Display selected cell value
+            if index_name and column_name:
+                selected_value = st.session_state.df.loc[index_name, column_name]
+                st.write(f"Selected Value: {selected_value}")
+
+            # Display warning message if exists
+            if st.session_state.warning_message:
+                st.warning(st.session_state.warning_message)
+
+            # Reset and Clear buttons
+            col_reset, col_clear = st.columns(2)
+            with col_reset:
+                if st.button("🔄 Reset", use_container_width=True):
+                    if st.session_state.has_defaults:
+                        st.session_state.tuples = st.session_state.default_tuples.copy()
+                    else:
+                        st.info("No default selections to reset to. Use Auto to add defaults first.")
+
+            with col_clear:
+                if st.button("🗑️ Clear All", use_container_width=True):
+                    st.session_state.tuples = []
+
+            # Display tuples
+            st.markdown("### Current Tuples")
+            for i, tup in enumerate(st.session_state.tuples):
+                col_tuple, col_delete = st.columns([4, 1])
+                with col_tuple:
+                    st.code(format_tuple(tup), language="python")
+                with col_delete:
+                    if st.button("🗑️", key=f"delete_{i}"):
+                        st.session_state.tuples.pop(i)
+                        # Clear previous insights when tuples change
+                        st.session_state.insights = None
+                        st.rerun()
+
+        # Generate Insights button and display
+        if st.button("Generate Insights", use_container_width=True):
+            if not st.session_state.tuples:
+                st.warning("Please select at least one data point first!")
+            else:
+                st.session_state.insights = generate_insights(st.session_state.tuples)
+
+        # Display insights if available
+        if st.session_state.insights:
+            st.markdown("### Generated Insights")
+            st.markdown(st.session_state.insights)
+
+            # Download PPT button
+            ppt_buffer = generate_ppt(st.session_state.insights, st.session_state.tuples)
+            st.download_button(
+                label="Download PPT",
+                data=ppt_buffer,
+                file_name="analysis_report.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True
             )
-
-        with col_column:
-            st.markdown("**Column Name**")
-            column_name = st.selectbox(
-                "Select Column",
-                options=st.session_state.df.columns,
-                key="column_select",
-                label_visibility="collapsed"
-            )
-
-        with col_add:
-            st.markdown("&nbsp;")  # Add spacing to align with dropdowns
-            if st.button("➕ Add", use_container_width=True):
-                add_tuple(index_name, column_name)
-
-        # Display selected cell value
-        if index_name and column_name:
-            selected_value = st.session_state.df.loc[index_name, column_name]
-            st.write(f"Selected Value: {selected_value}")
-
-        # Display warning message if exists
-        if st.session_state.warning_message:
-            st.warning(st.session_state.warning_message)
-
-        # Reset and Clear buttons
-        col_reset, col_clear = st.columns(2)
-        with col_reset:
-            if st.button("🔄 Reset", use_container_width=True):
-                if st.session_state.has_defaults:
-                    st.session_state.tuples = st.session_state.default_tuples.copy()
-                else:
-                    st.info("No default selections to reset to. Use Auto to add defaults first.")
-
-        with col_clear:
-            if st.button("🗑️ Clear All", use_container_width=True):
-                st.session_state.tuples = []
-
-        # Display tuples
-        st.markdown("### Current Tuples")
-        for i, tup in enumerate(st.session_state.tuples):
-            col_tuple, col_delete = st.columns([4, 1])
-            with col_tuple:
-                st.code(format_tuple(tup), language="python")
-            with col_delete:
-                if st.button("🗑️", key=f"delete_{i}"):
-                    st.session_state.tuples.pop(i)
-                    st.rerun()
 
 if __name__ == "__main__":
     main()
