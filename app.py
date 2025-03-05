@@ -12,22 +12,19 @@ from utils.llm import get_reason_code, get_commentary, modify_commentary
 from utils.ppt_export import generate_ppt
 from utils import get_summary_table
 
+
 # STEP 0 : Setting up the DB engine
 EXCEL_DATA_PATH = "data"
-db_client_path = r"C:\\instantclient_23_7"
+config_file = "config/config.yaml"
+excel_data_dir = "data"
+config = read_config(config_file)
 
-# Loading the env variables
-load_dotenv()
-
-db_username = os.getenv('ORACLE_DB_USERNAME')
-db_password = os.getenv('ORACLE_DB_PASSWORD')
-db_host = os.getenv('ORACLE_DB_HOSTNAME')
-db_port = os.getenv('ORACLE_DB_PORTNO')
-db_service_name = os.getenv('ORACLE_DB_SERVICENAME')
-
-oracledb.init_oracle_client(lib_dir=db_client_path)
-
-engine = create_engine(f"oracle+oracledb://{db_username}:{db_password}@{db_host}:{db_port}/?service_name={db_service_name}")
+@st.cache_resource
+def load_engine(config):
+    # database configuration
+    db_config = config.get('database', {})
+    engine = create_oracle_engine(db_config)
+    return engine
 
 
 def load_css():
@@ -69,9 +66,11 @@ def create_table(df, highlighted_cells):
 
 def main():
     st.title("LLM Commentary")
-    
+
     # Load CSS
     load_css()
+
+    engine = load_engine(config)
 
     # Initialize session state
     if 'highlighted_cells' not in st.session_state:
@@ -84,55 +83,65 @@ def main():
     # File selection
     excel_files = [f for f in os.listdir(EXCEL_DATA_PATH) if f.endswith('.xlsx')]
     file_list = [Path(f).stem for f in excel_files]
-    selected_file = st.selectbox("Select a file", file_list)
+    st.session_state.selected_file = st.sidebar.selectbox("Select a file", file_list)
 
     # OK button
-    if st.button("OK"):
-        # raw_df = pd.read_sql(f"SELECT * FROM {selected_file}", con=engine)
-        raw_df = pd.read_csv("temp.csv")  # REMOVE THIS
-        raw_df = raw_df.round(1)
+    if st.sidebar.button("OK"):
+        st.session_state.file_config = get_file_config_by_path(config, st.session_state.selected_file)
+        summary_func_name = st.session_state.file_config.get('summary_table_function')
+        summary_func = globals()[summary_func_name]
+        st.session_state.df = summary_func(engine)
+        st.session_state.df = st.session_state.df.drop(columns=['Y/Y %', 'Q/Q %'])
+        st.session_state.df = st.session_state.df.map(convert_to_int)
 
-        try:
-            processing_func = getattr(get_summary_table, selected_file)
-            df = processing_func(raw_df)
-            df = df.round(1)
-        except AttributeError:
-            print(f"No function defined for {selected_file}")
-
-        st.session_state.df = df
-        st.session_state.raw_df = raw_df
-        st.session_state.highlighted_cells = get_reason_code(df)
+        st.session_state.highlighted_cells = get_reason_code(st.session_state.df)
         st.session_state.file_selected = True
+        st.session_state.show_commentary = False  # resetting commentary when new file is selected
 
     # Display table if file is selected
     if st.session_state.file_selected and st.session_state.df is not None:
-        st.markdown("⚡ Click on cells to select/deselect them.")
+        st.markdown("( Click on cells to select/deselect them. )")
         create_table(st.session_state.df, st.session_state.highlighted_cells)
 
     # Generate Insights button
-    if st.button("Generate Insights"):
+    commentary_button = st.button("Generate Insights")
+    
+    if commentary_button:
         selected_cells = []
         for i, j in st.session_state.highlighted_cells:
             row_name = st.session_state.df.index[i]
             col_name = st.session_state.df.columns[j]
             value = st.session_state.df.iloc[i, j]
-            selected_cells.append((row_name, col_name, value))
-        
-        # Commentary generation function
-        commentary = get_commentary(selected_cells, st.session_state.df, st.session_state.raw_df)
+            selected_cells.append((row_name, col_name, convert_to_int(float(value))))
+
+        # getting the top contributors
+        table_name = st.session_state.file_config.get('table_name')
+        top_contributors = get_top_attributes_by_difference(engine, selected_cells, table_name)
+        st.session_state.selected_cells = selected_cells
+
+        top_contributors_formatted = format_top_contributors(top_contributors)
+
+        # generating the commentary
+        st.session_state.commentary = get_commentary(top_contributors_formatted)
+        st.session_state.show_commentary = True
+
+    # showing the commentary
+    if st.session_state.show_commentary:
         st.markdown("### Generated Insights")
-        st.markdown(f"<div class='insights-text'>{commentary}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='insights-text'>{st.session_state.commentary}</div>", unsafe_allow_html=True)
 
-    # Modification input
-    modification = st.text_area("Enter modifications to the commentary:", height=100)
-    if st.button("Apply Modifications"):
-        modified_commentary = modify_commentary(modification, commentary)
-        st.markdown(f"<div class='insights-text'>{modified_commentary}</div>", unsafe_allow_html=True)
+        # Download button
+        selected_cells_modified = names_to_index(st.session_state.df, st.session_state.selected_cells)
+        df_modified = st.session_state.df.reset_index()
+        pptx_file = generate_ppt(df_modified, selected_cells_modified, st.session_state.commentary, st.session_state.selected_file)
 
-    # Download button
-    if st.button("Download PPT"):
-        # PPT generation function
-        generate_ppt(modified_commentary)
+        st.download_button(
+            label="Download PPT",
+            data=pptx_file,
+            file_name="sample_presentation.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+
 
 if __name__ == "__main__":
     main()
