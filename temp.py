@@ -1,84 +1,127 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+from utils import create_sample_dataframe, get_default_tuples
 
-# Create sample dataframe
-def create_sample_df():
-    data = {
-        'A': [1, 2, 3, 4],
-        'B': [5, 6, 7, 8],
-        'C': [9, 10, 11, 12],
-        'D': [13, 14, 15, 16]
-    }
-    df = pd.DataFrame(data)
-    df.index = [f'Row_{i}' for i in range(len(df))]
-    return df
+def format_tuple(tup: Tuple[str, str, any]) -> str:
+    """Format tuple for display"""
+    return f"({tup[0]}, {tup[1]}, {tup[2]})"
 
-# Function to initialize default tuples
-def get_default_tuples():
-    return [
-        ('Row_0', 'A', 1),
-        ('Row_2', 'C', 9),
-    ]
+def initialize_session_state():
+    """Initialize session state variables if they don't exist"""
+    if 'df' not in st.session_state:
+        st.session_state.df = create_sample_dataframe()
+    if 'tuples' not in st.session_state:
+        st.session_state.tuples = []
+    if 'has_defaults' not in st.session_state:
+        st.session_state.has_defaults = False
+    if 'default_tuples' not in st.session_state:
+        st.session_state.default_tuples = []
+    if 'warning_message' not in st.session_state:
+        st.session_state.warning_message = None
 
-# App title
-st.title('Interactive DataFrame Viewer')
+def add_tuple(index_name: str, column_name: str):
+    """Add a new tuple to the list"""
+    if index_name and column_name:
+        value = st.session_state.df.loc[index_name, column_name]
+        new_tuple = (index_name, column_name, value)
+        if new_tuple in st.session_state.tuples:
+            st.session_state.warning_message = f"Tuple ({index_name}, {column_name}, {value}) already exists!"
+            return
+        st.session_state.warning_message = None
+        st.session_state.tuples.append(new_tuple)
 
-# Create and display the dataframe
-df = create_sample_df()
+def auto_select():
+    """Add default tuples to the current selection"""
+    default_tuples = get_default_tuples(st.session_state.df)
+    st.session_state.default_tuples = default_tuples
+    st.session_state.has_defaults = True
+    for tup in default_tuples:
+        if tup not in st.session_state.tuples:
+            st.session_state.tuples.append(tup)
 
-# Initialize session state for storing selected tuples if not exists
-if 'selected_tuples' not in st.session_state:
-    st.session_state.selected_tuples = get_default_tuples()
+def main():
+    st.set_page_config(page_title="DataFrame Tuple Manager", layout="wide")
 
-# Main layout
-st.subheader('DataFrame')
-st.dataframe(df, use_container_width=True)
+    # Initialize session state
+    initialize_session_state()
 
-# Selection and Tuple Management Row
-col1, col2, col3 = st.columns([2, 2, 1])
+    st.title("DataFrame Tuple Manager")
 
-with col1:
-    # Row selection dropdown
-    selected_row = st.selectbox('Select Row', options=df.index, label_visibility='visible')
+    # Create two columns with custom width ratio
+    col1, col2 = st.columns([2, 1])
 
-with col2:
-    # Column selection dropdown
-    selected_column = st.selectbox('Select Column', options=df.columns, label_visibility='visible')
+    # Display DataFrame in left column
+    with col1:
+        st.dataframe(st.session_state.df, use_container_width=True)
 
-with col3:
-    # Add Selection button (aligned with dropdowns)
-    st.text(" ")  # Add a blank line to align with dropdowns
-    if st.button('Add Selection', use_container_width=True):
-        selected_value = df.at[selected_row, selected_column]
-        new_tuple = (selected_row, selected_column, selected_value)
-        if new_tuple not in st.session_state.selected_tuples:
-            st.session_state.selected_tuples.append(new_tuple)
-            st.experimental_rerun()
+    # All controls in right column
+    with col2:
+        # Controls header with Auto button
+        col_header, col_auto = st.columns([2, 1])
+        with col_header:
+            st.markdown("### Controls")
+        with col_auto:
+            if st.button("🎯 Auto", use_container_width=True):
+                auto_select()
 
-# Tuple Display and Management
-st.subheader('Selected Tuples')
-tuple_col1, tuple_col2 = st.columns([3, 1])
+        # Create side-by-side dropdowns and add button
+        col_index, col_column, col_add = st.columns([2, 2, 1])
 
-with tuple_col1:
-    # Display selected tuples
-    for idx, (index, column, value) in enumerate(st.session_state.selected_tuples):
-        tuple_container = st.container()
-        with tuple_container:
-            col_a, col_b = st.columns([5, 1])
-            with col_a:
-                st.text(f"({index}, {column}, {value})")
-            with col_b:
-                if st.button("❌", key=f"delete_{idx}"):
-                    st.session_state.selected_tuples.pop(idx)
-                    st.experimental_rerun()
+        with col_index:
+            st.markdown("**Row Index**")
+            index_name = st.selectbox(
+                "Select Index",
+                options=st.session_state.df.index,
+                key="index_select",
+                label_visibility="collapsed"
+            )
 
-with tuple_col2:
-    # Reset and Clear buttons
-    if st.button("Reset to Defaults", use_container_width=True):
-        st.session_state.selected_tuples = get_default_tuples()
-        st.experimental_rerun()
-    
-    if st.button("Clear All", use_container_width=True):
-        st.session_state.selected_tuples = []
-        st.experimental_rerun()
+        with col_column:
+            st.markdown("**Column Name**")
+            column_name = st.selectbox(
+                "Select Column",
+                options=st.session_state.df.columns,
+                key="column_select",
+                label_visibility="collapsed"
+            )
+
+        with col_add:
+            st.markdown("&nbsp;")  # Add spacing to align with dropdowns
+            if st.button("➕ Add", use_container_width=True):
+                add_tuple(index_name, column_name)
+
+        # Display selected cell value
+        if index_name and column_name:
+            selected_value = st.session_state.df.loc[index_name, column_name]
+            st.write(f"Selected Value: {selected_value}")
+
+        # Display warning message if exists
+        if st.session_state.warning_message:
+            st.warning(st.session_state.warning_message)
+
+        # Reset and Clear buttons
+        col_reset, col_clear = st.columns(2)
+        with col_reset:
+            if st.button("🔄 Reset", use_container_width=True):
+                if st.session_state.has_defaults:
+                    st.session_state.tuples = st.session_state.default_tuples.copy()
+                else:
+                    st.info("No default selections to reset to. Use Auto to add defaults first.")
+
+        with col_clear:
+            if st.button("🗑️ Clear All", use_container_width=True):
+                st.session_state.tuples = []
+
+        # Display tuples
+        st.markdown("### Current Tuples")
+        for i, tup in enumerate(st.session_state.tuples):
+            col_tuple, col_delete = st.columns([4, 1])
+            with col_tuple:
+                st.code(format_tuple(tup), language="python")
+            with col_delete:
+                if st.button("🗑️", key=f"delete_{i}"):
+                    st.session_state.tuples.pop(i)
+                    st.rerun()
+
+if __name__ == "__main__":
+    main()
