@@ -127,3 +127,76 @@ def perform_comprehensive_eda(df):
 # df = pd.read_csv('your_data.csv')
 # eda_results = perform_comprehensive_eda(df)
 # print(eda_results['column_summary'])
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Assuming your DataFrame is named df
+# Example summary information:
+summary = {
+    'Date': df['Date'].unique(),
+    'Transaction Type': df['Transaction Type'].unique(),
+    'End User Count': df['End User'].nunique(),
+    'Region': df['Region'].unique(),
+    'Reason Code': df['Reason Code'].unique(),
+    'Total Amount': df['Amount'].sum()
+}
+print("Summary Information:")
+print(summary)
+
+# Create a figure with multiple subplots
+fig, axes = plt.subplots(3, 2, figsize=(16, 18))
+plt.subplots_adjust(hspace=0.4, wspace=0.3)
+
+# Plot 1: Transaction Type Count
+sns.countplot(data=df, x='Transaction Type', palette='Set2', ax=axes[0, 0])
+axes[0, 0].set_title('Transaction Type Frequency', fontsize=14)
+axes[0, 0].set_xlabel('Transaction Type', fontsize=12)
+axes[0, 0].set_ylabel('Count', fontsize=12)
+
+# Plot 2: Amount Distribution by Quarter
+sns.boxplot(data=df, x='Date', y='Amount', palette='Set3', ax=axes[0, 1])
+axes[0, 1].set_title('Amount Distribution per Quarter', fontsize=14)
+axes[0, 1].set_xlabel('Quarter', fontsize=12)
+axes[0, 1].set_ylabel('Amount ($)', fontsize=12)
+
+# Plot 3: Total Amount by Region
+# First aggregate the data
+region_amount = df.groupby('Region')['Amount'].sum().reset_index()
+sns.barplot(data=region_amount, x='Region', y='Amount', palette='viridis', ax=axes[1, 0])
+axes[1, 0].set_title('Total Amount by Region', fontsize=14)
+axes[1, 0].set_xlabel('Region', fontsize=12)
+axes[1, 0].set_ylabel('Total Amount ($)', fontsize=12)
+for p in axes[1, 0].patches:
+    height = p.get_height()
+    axes[1, 0].annotate(f'{height:,.0f}', (p.get_x() + p.get_width() / 2, height),
+                        ha='center', va='bottom', fontsize=10)
+
+# Plot 4: Reason Code Frequency
+sns.countplot(data=df, x='Reason Code', palette='pastel', ax=axes[1, 1])
+axes[1, 1].set_title('Reason Code Frequency', fontsize=14)
+axes[1, 1].set_xlabel('Reason Code', fontsize=12)
+axes[1, 1].set_ylabel('Count', fontsize=12)
+axes[1, 1].tick_params(axis='x', rotation=45)
+
+# Plot 5: Trend Over Time by Transaction Type
+# Aggregate total amount by Date and Transaction Type
+trend = df.groupby(['Date', 'Transaction Type'])['Amount'].sum().reset_index()
+sns.lineplot(data=trend, x='Date', y='Amount', hue='Transaction Type', marker='o', ax=axes[2, 0])
+axes[2, 0].set_title('Total Amount Trend by Transaction Type', fontsize=14)
+axes[2, 0].set_xlabel('Quarter', fontsize=12)
+axes[2, 0].set_ylabel('Total Amount ($)', fontsize=12)
+axes[2, 0].tick_params(axis='x', rotation=45)
+
+# Plot 6: (Optional) Distribution of End Users (if needed)
+# Here we show the count of transactions per End User (top 10 for clarity)
+top_end_users = df['End User'].value_counts().nlargest(10).index
+sns.countplot(data=df[df['End User'].isin(top_end_users)], y='End User', palette='coolwarm', ax=axes[2, 1])
+axes[2, 1].set_title('Top 10 End Users by Transaction Count', fontsize=14)
+axes[2, 1].set_xlabel('Count', fontsize=12)
+axes[2, 1].set_ylabel('End User', fontsize=12)
+
+plt.tight_layout()
+plt.show()
