@@ -1,72 +1,88 @@
 import streamlit as st
 import pandas as pd
-import os
-from pathlib import Path
+import numpy as np
 
-def main():
-    st.title("LLM Commentary")
+# Create sample dataframe
+def create_sample_df():
+    data = {
+        'A': [1, 2, 3, 4],
+        'B': [5, 6, 7, 8],
+        'C': [9, 10, 11, 12],
+        'D': [13, 14, 15, 16]
+    }
+    df = pd.DataFrame(data)
+    df.index = [f'Row_{i}' for i in range(len(df))]
+    return df
 
-    # Initialize session state
-    if 'highlighted_cells' not in st.session_state:
-        st.session_state.highlighted_cells = set()  # Stores (index_name, column_name)
-    if 'df' not in st.session_state:
-        st.session_state.df = None
-    if 'file_selected' not in st.session_state:
-        st.session_state.file_selected = False
+# Function to initialize default tuples
+def get_default_tuples():
+    return [
+        ('Row_0', 'A', 1),
+        ('Row_2', 'C', 9),
+    ]
 
-    # File selection
-    excel_files = [f for f in os.listdir(EXCEL_DATA_PATH) if f.endswith('.xlsx')]
-    file_list = [Path(f).stem for f in excel_files]
-    st.session_state.selected_file = st.sidebar.selectbox("Select a file", file_list)
+# App title
+st.title('Interactive DataFrame Viewer')
 
-    # OK button
-    if st.sidebar.button("OK"):
-        st.session_state.file_config = get_file_config_by_path(config, st.session_state.selected_file)
-        summary_func_name = st.session_state.file_config.get('summary_table_function')
-        summary_func = globals()[summary_func_name]
-        st.session_state.df = summary_func(engine)
-        st.session_state.df = st.session_state.df.drop(columns=['Y/Y %', 'Q/Q %'])
-        st.session_state.df = st.session_state.df.map(convert_to_int)
+# Create and display the dataframe
+df = create_sample_df()
 
-        # Convert highlighted cells to (index_name, column_name) pairs
-        highlighted_indices = get_reason_code(st.session_state.df)
-        st.session_state.highlighted_cells = {
-            (st.session_state.df.index[i], st.session_state.df.columns[j]) for (i, j) in highlighted_indices
-        }
+# Initialize session state for storing selected tuples if not exists
+if 'selected_tuples' not in st.session_state:
+    st.session_state.selected_tuples = get_default_tuples()
 
-        st.session_state.file_selected = True
-        st.session_state.show_commentary = False  # Reset commentary when new file is selected
+# Create main layout
+main_col1, main_col2 = st.columns([3, 1])
 
-    # Display table if file is selected
-    if st.session_state.file_selected and st.session_state.df is not None:
-        st.markdown("### Summary Table (Click to Select/Deselect)")
-        st.dataframe(st.session_state.df.style.applymap(
-            lambda _: "background-color: yellow", 
-            subset=pd.IndexSlice[
-                [idx for idx, _ in st.session_state.highlighted_cells], 
-                [col for _, col in st.session_state.highlighted_cells]
-            ]
-        ))
+with main_col1:
+    # Display the dataframe
+    st.subheader('DataFrame')
+    st.dataframe(df, use_container_width=True)
 
-        # Selection UI
-        st.markdown("### Select Cells to Highlight")
-        reason_code = st.selectbox("Reason Code (Row)", st.session_state.df.index)
-        attribute = st.selectbox("Attribute (Column)", st.session_state.df.columns)
+with main_col2:
+    # Row and Column Selection
+    st.subheader('Select Data Point')
+    
+    # Dropdowns for row and column selection
+    selected_row = st.selectbox('Select Row', options=df.index)
+    selected_column = st.selectbox('Select Column', options=df.columns)
+    
+    # Show the selected value
+    selected_value = df.at[selected_row, selected_column]
+    st.write(f'Selected Value: {selected_value}')
+    
+    # Add button to add selection
+    if st.button('Add Selection'):
+        new_tuple = (selected_row, selected_column, selected_value)
+        if new_tuple not in st.session_state.selected_tuples:
+            st.session_state.selected_tuples.append(new_tuple)
+            st.experimental_rerun()
 
-        if st.button("Add Selection"):
-            st.session_state.highlighted_cells.add((reason_code, attribute))
-            st.rerun()
+# Tuple Management Section
+st.subheader('Selected Tuples')
 
-        # Display Selected Cells
-        st.markdown("### Selected Cells")
-        if st.session_state.highlighted_cells:
-            selected_cells = list(st.session_state.highlighted_cells)
-            to_remove = st.multiselect("Remove Selection", selected_cells, format_func=lambda x: f"{x[0]} - {x[1]}")
-            if st.button("Remove Selected"):
-                st.session_state.highlighted_cells -= set(to_remove)
-                st.rerun()
-        else:
-            st.write("No cells selected.")
+# Columns for tuple management
+col1, col2 = st.columns([3, 1])
 
-if __name__ == "__main__":
-    main()
+with col1:
+    # Display and manage selected tuples
+    for idx, (index, column, value) in enumerate(st.session_state.selected_tuples):
+        tuple_container = st.container()
+        with tuple_container:
+            col_a, col_b = st.columns([5, 1])
+            with col_a:
+                st.text(f"({index}, {column}, {value})")
+            with col_b:
+                if st.button("❌", key=f"delete_{idx}"):
+                    st.session_state.selected_tuples.pop(idx)
+                    st.experimental_rerun()
+
+with col2:
+    # Reset and Clear buttons
+    if st.button("Reset to Defaults"):
+        st.session_state.selected_tuples = get_default_tuples()
+        st.experimental_rerun()
+    
+    if st.button("Clear All"):
+        st.session_state.selected_tuples = []
+        st.experimental_rerun()
