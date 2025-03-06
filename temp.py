@@ -210,3 +210,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+###
+# def render_dataframe_section():
+#     """Render the DataFrame and insights section"""
+#     if st.session_state.df is not None:
+#         st.markdown('<p class="section-header">Data Preview</p>', unsafe_allow_html=True)
+#         st.dataframe(st.session_state.df, use_container_width=True, height=400)
