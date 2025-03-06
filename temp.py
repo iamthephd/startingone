@@ -5,6 +5,11 @@ from utils.file_processor import process_file, SAMPLE_FILES
 from utils.insights_generator import generate_insights
 from utils.ppt_generator import generate_ppt
 
+def load_custom_css():
+    """Load custom CSS styles"""
+    with open("styles/custom.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
 def initialize_session_state():
     """Initialize session state variables if they don't exist"""
     if 'file_selected' not in st.session_state:
@@ -44,7 +49,6 @@ def add_tuple(index_name: str, column_name: str):
             return
         st.session_state.warning_message = None
         st.session_state.tuples.append(new_tuple)
-        # Clear previous insights when tuples change
         st.session_state.insights = None
 
 def auto_select():
@@ -68,124 +72,141 @@ def handle_file_selection():
         st.session_state.warning_message = None
         st.session_state.insights = None
 
-def main():
-    st.set_page_config(page_title="DataFrame Tuple Manager", layout="wide")
-    initialize_session_state()
+def render_file_selector():
+    """Render the file selection column"""
+    st.markdown('<p class="section-header">File Selection</p>', unsafe_allow_html=True)
+    st.selectbox(
+        "Choose a file to analyze",
+        options=list(SAMPLE_FILES.keys()),
+        key="selected_file",
+    )
+    if st.button("Load File", use_container_width=True):
+        handle_file_selection()
 
-    st.title("DataFrame Tuple Manager")
+def render_dataframe_section():
+    """Render the DataFrame and insights section"""
+    if st.session_state.df is not None:
+        st.markdown('<p class="section-header">Data Preview</p>', unsafe_allow_html=True)
+        st.dataframe(st.session_state.df, use_container_width=True, height=400)
 
-    # File selection section
-    col_file, col_ok = st.columns([4, 1])
-    with col_file:
-        st.selectbox(
-            "Select a file",
-            options=list(SAMPLE_FILES.keys()),
-            key="selected_file"
-        )
-    with col_ok:
-        st.write("")  # Add spacing
-        if st.button("OK", use_container_width=True):
-            handle_file_selection()
-
-    # Only show the rest of the interface after file selection
-    if st.session_state.file_selected and st.session_state.df is not None:
-        col1, col2 = st.columns([2, 1])
-
-        # Display DataFrame in left column
-        with col1:
-            st.dataframe(st.session_state.df, use_container_width=True)
-
-        # All controls in right column
-        with col2:
-            col_header, col_auto = st.columns([2, 1])
-            with col_header:
-                st.markdown("### Controls")
-            with col_auto:
-                if st.button("🎯 Auto", use_container_width=True):
-                    auto_select()
-
-            # Create side-by-side dropdowns and add button
-            col_index, col_column, col_add = st.columns([2, 2, 1])
-
-            with col_index:
-                st.markdown("**Row Index**")
-                index_name = st.selectbox(
-                    "Select Index",
-                    options=st.session_state.df.index,
-                    key="index_select",
-                    label_visibility="collapsed"
-                )
-
-            with col_column:
-                st.markdown("**Column Name**")
-                column_name = st.selectbox(
-                    "Select Column",
-                    options=st.session_state.df.columns,
-                    key="column_select",
-                    label_visibility="collapsed"
-                )
-
-            with col_add:
-                st.markdown("&nbsp;")
-                if st.button("➕ Add", use_container_width=True):
-                    add_tuple(index_name, column_name)
-
-            # Display selected cell value
-            if index_name and column_name:
-                selected_value = st.session_state.df.loc[index_name, column_name]
-                st.write(f"Selected Value: {selected_value}")
-
-            # Display warning message if exists
-            if st.session_state.warning_message:
-                st.warning(st.session_state.warning_message)
-
-            # Reset and Clear buttons
-            col_reset, col_clear = st.columns(2)
-            with col_reset:
-                if st.button("🔄 Reset", use_container_width=True):
-                    if st.session_state.has_defaults:
-                        st.session_state.tuples = st.session_state.default_tuples.copy()
-                    else:
-                        st.info("No default selections to reset to. Use Auto to add defaults first.")
-
-            with col_clear:
-                if st.button("🗑️ Clear All", use_container_width=True):
-                    st.session_state.tuples = []
-
-            # Display tuples
-            st.markdown("### Current Tuples")
-            for i, tup in enumerate(st.session_state.tuples):
-                col_tuple, col_delete = st.columns([4, 1])
-                with col_tuple:
-                    st.code(format_tuple(tup), language="python")
-                with col_delete:
-                    if st.button("🗑️", key=f"delete_{i}"):
-                        st.session_state.tuples.pop(i)
-                        # Clear previous insights when tuples change
-                        st.session_state.insights = None
-                        st.rerun()
-
-        # Generate Insights button and display
+        # Full-width Generate Insights button
         if st.button("Generate Insights", use_container_width=True):
             if not st.session_state.tuples:
                 st.warning("Please select at least one data point first!")
             else:
                 st.session_state.insights = generate_insights(st.session_state.tuples)
 
-        # Display insights if available
         if st.session_state.insights:
-            st.markdown("### Generated Insights")
+            st.markdown('<div class="insight-container">', unsafe_allow_html=True)
+            col1, col2 = st.columns([6, 1])
+            with col1:
+                st.markdown("### Generated Insights")
+            with col2:
+                if st.button("📋 Copy", key="copy_insights"):
+                    st.write("Insights copied to clipboard!")
+                    st.markdown(
+                        f"""
+                        <script>
+                            navigator.clipboard.writeText("{st.session_state.insights}");
+                        </script>
+                        """,
+                        unsafe_allow_html=True
+                    )
             st.markdown(st.session_state.insights)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-            # Download PPT button
             ppt_buffer = generate_ppt(st.session_state.insights, st.session_state.tuples)
             st.download_button(
-                label="Download PPT",
+                label="📥 Download PPT Report",
                 data=ppt_buffer,
                 file_name="analysis_report.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                 use_container_width=True
             )
+
+def render_controls_section():
+    """Render the controls and tuples section"""
+    st.markdown('<p class="section-header">Controls</p>', unsafe_allow_html=True)
+    
+    # Auto select button
+    if st.button("🎯 Auto Select", use_container_width=True):
+        auto_select()
+
+    # Selection controls
+    st.markdown("**Row and Column Selection**")
+    col_index, col_column = st.columns(2)
+    
+    with col_index:
+        index_name = st.selectbox(
+            "Select Row Index",
+            options=st.session_state.df.index,
+            key="index_select"
+        )
+    
+    with col_column:
+        column_name = st.selectbox(
+            "Select Column",
+            options=st.session_state.df.columns,
+            key="column_select"
+        )
+
+    if st.button("➕ Add Selection", use_container_width=True):
+        add_tuple(index_name, column_name)
+
+    # Display selected value
+    if index_name and column_name:
+        selected_value = st.session_state.df.loc[index_name, column_name]
+        st.info(f"Selected Value: {selected_value}")
+
+    # Warning message
+    if st.session_state.warning_message:
+        st.warning(st.session_state.warning_message)
+
+    # Reset and Clear buttons
+    col_reset, col_clear = st.columns(2)
+    with col_reset:
+        if st.button("🔄 Reset", use_container_width=True):
+            if st.session_state.has_defaults:
+                st.session_state.tuples = st.session_state.default_tuples.copy()
+            else:
+                st.info("No default selections available")
+
+    with col_clear:
+        if st.button("🗑️ Clear All", use_container_width=True):
+            st.session_state.tuples = []
+
+    # Display current tuples
+    st.markdown('<p class="section-header">Current Selections</p>', unsafe_allow_html=True)
+    for i, tup in enumerate(st.session_state.tuples):
+        with st.container():
+            col_tuple, col_delete = st.columns([4, 1])
+            with col_tuple:
+                st.code(format_tuple(tup), language="python")
+            with col_delete:
+                if st.button("🗑️", key=f"delete_{i}"):
+                    st.session_state.tuples.pop(i)
+                    st.session_state.insights = None
+                    st.rerun()
+
+def main():
+    st.set_page_config(page_title="DataFrame Tuple Manager", layout="wide")
+    load_custom_css()
+    initialize_session_state()
+
+    st.markdown('<h1 class="main-header">DataFrame Tuple Manager</h1>', unsafe_allow_html=True)
+
+    # Create three columns with specific ratios
+    col_files, col_data, col_controls = st.columns([1, 4, 2])
+
+    with col_files:
+        render_file_selector()
+
+    with col_data:
+        render_dataframe_section()
+
+    with col_controls:
+        if st.session_state.file_selected and st.session_state.df is not None:
+            render_controls_section()
 
 if __name__ == "__main__":
     main()
