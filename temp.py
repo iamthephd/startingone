@@ -175,3 +175,32 @@ if __name__ == "__main__":
     )
     
     print(result)
+
+
+### Test this
+import langgraph
+
+# Define the graph
+workflow = langgraph.Graph()
+
+def user_input_node(input_text):
+    return {"result": f"User said: {input_text}"}
+
+def refine_result_node(data):
+    return {"refined_result": data["result"] + " | Refined version"}
+
+# Add nodes to the graph
+workflow.add_node("user_input", user_input_node)
+workflow.add_node("refine_result", refine_result_node)
+
+# Define edges (connections between nodes)
+workflow.set_entry_point("user_input")
+workflow.add_edge("user_input", "refine_result")
+
+# Compile the workflow
+app = workflow.compile()
+
+# Run the workflow
+input_text = "Hello, LangGraph!"
+output = app.invoke(input_text)
+print(output)
