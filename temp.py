@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Define the state schema
-class QueryState(TypedDict):
+class QueryState(TypedDict, total=False):
     user_question: str
     sql_query: Optional[str]
     sql_result: Optional[str]
@@ -31,7 +31,7 @@ def generate_sql(state: QueryState, llm, sql_prompt) -> QueryState:
         # Extract the specific error message for the LLM
         error_prompt = f"""
 The previous SQL query failed with the following error:
-{state["error"]}
+{state.get("error")}
 
 Please fix the SQL query. Remember to:
 1. Use proper Oracle SQL syntax
@@ -60,11 +60,11 @@ Please fix the SQL query. Remember to:
 
 def execute_sql(state: QueryState, db) -> QueryState:
     """Execute SQL query"""
-    logger.info(f"Executing SQL: {state['sql_query']}")
+    logger.info(f"Executing SQL: {state.get('sql_query', '')}")
     
     try:
         # Execute the query
-        sql_result = db.run(state["sql_query"])
+        sql_result = db.run(state.get("sql_query", ""))
         
         return {
             **state,
@@ -79,7 +79,7 @@ def execute_sql(state: QueryState, db) -> QueryState:
         return {
             **state,
             "error": error_message,
-            "retry_count": state["retry_count"] + 1,
+            "retry_count": state.get("retry_count", 0) + 1,
             "status": "ERROR"
         }
 
@@ -88,21 +88,21 @@ def format_response(state: QueryState, llm, response_prompt) -> QueryState:
     logger.info("Formatting response")
     
     # For successful queries
-    if state["status"] == "FORMATTING_RESPONSE":
+    if state.get("status") == "FORMATTING_RESPONSE":
         # Format the prompt with all the information
         formatted_prompt = response_prompt.format(
-            question=state["user_question"],
-            sql_query=state["sql_query"],
-            sql_result=state["sql_result"]
+            question=state.get("user_question", ""),
+            sql_query=state.get("sql_query", ""),
+            sql_result=state.get("sql_result", "")
         )
     else:
         # For queries that failed after max retries
         formatted_prompt = f"""
 You are an AI assistant that helps users understand data from an Oracle database.
 
-User Question: {state["user_question"]}
-SQL Query: {state["sql_query"]}
-SQL Result: Error after {state["retry_count"]} attempts: {state["error"]}
+User Question: {state.get("user_question", "")}
+SQL Query: {state.get("sql_query", "")}
+SQL Result: Error after {state.get("retry_count", 0)} attempts: {state.get("error", "Unknown error")}
 
 Your Response:
 """
@@ -137,11 +137,12 @@ def create_nl_to_sql_graph(llm, db, sql_prompt, response_prompt, max_retries=10)
     # Define conditional edges for retry logic
     def should_retry(state):
         # If error occurred and we haven't exceeded max retries
-        if state["status"] == "ERROR" and state["retry_count"] < max_retries:
+        if state.get("status") == "ERROR" and state.get("retry_count", 0) < max_retries:
             return "generate_sql"
         # If error occurred but we've reached max retries
-        elif state["status"] == "ERROR":
+        elif state.get("status") == "ERROR":
             return "format_response"
+        return None
     
     workflow.add_conditional_edges(
         "execute_sql",
@@ -165,20 +166,23 @@ def create_nl_to_sql_graph(llm, db, sql_prompt, response_prompt, max_retries=10)
             # Initialize state
             initial_state = {
                 "user_question": query,
-                "sql_query": None,
-                "sql_result": None,
+                "sql_query": "",
+                "sql_result": "",
                 "error": None,
                 "retry_count": 0,
                 "status": "GENERATING_SQL"
             }
             
             # Execute the graph
+            final_state = None
             for event in self.graph.stream(initial_state):
-                pass
+                final_state = event["state"]
             
             # Return the final state (which contains the formatted response)
-            final_state = event["state"]
-            return final_state["sql_result"]
+            if final_state and "sql_result" in final_state:
+                return final_state["sql_result"]
+            else:
+                return "Error: Query processing failed unexpectedly."
     
     return NLToSQLGraph(app)
 
