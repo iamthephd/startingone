@@ -1,176 +1,233 @@
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
-from typing import Dict, Any, Optional
+from typing import Dict, List, Any, Annotated, Literal, TypedDict, Union, Optional
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+import operator
 import logging
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class SQLQueryExecutor:
-    def __init__(self, llm1, llm2, db, sql_prompt_template, response_prompt_template, max_retries=10):
-        """
-        Initialize the SQL Query Executor.
-        
-        Args:
-            llm1: LLM for converting natural language to SQL
-            llm2: LLM for formatting the final response
-            db: Database instance with run() method
-            sql_prompt_template: Template for generating SQL from natural language
-            response_prompt_template: Template for formatting the final response
-            max_retries: Maximum number of retries for SQL execution
-        """
-        self.llm1 = llm1
-        self.llm2 = llm2
-        self.db = db
-        self.sql_prompt_template = sql_prompt_template
-        self.response_prompt_template = response_prompt_template
-        self.max_retries = max_retries
-        
-        # Create the SQL generation chain
-        self.sql_chain = LLMChain(
-            llm=self.llm1,
-            prompt=self.sql_prompt_template,
-            output_parser=StrOutputParser()
-        )
-        
-        # Create the response formatting chain
-        self.response_chain = LLMChain(
-            llm=self.llm2,
-            prompt=self.response_prompt_template,
-            output_parser=StrOutputParser()
-        )
-    
-    def _execute_sql_with_retry(self, sql_query: str, retry_count: int = 0) -> Dict[str, Any]:
-        """
-        Execute SQL query with retry logic.
-        
-        Args:
-            sql_query: SQL query to execute
-            retry_count: Current retry count
-            
-        Returns:
-            Dictionary with SQL query and results (or error)
-        """
-        if retry_count >= self.max_retries:
-            return {
-                "sql_query": sql_query,
-                "result": f"Failed after {self.max_retries} attempts. Last error: Query execution failed.",
-                "success": False
-            }
-        
-        try:
-            logger.info(f"Executing SQL query: {sql_query}")
-            result = self.db.run(sql_query)
-            return {
-                "sql_query": sql_query,
-                "result": result,
-                "success": True
-            }
-        except Exception as e:
-            logger.warning(f"Error executing SQL (attempt {retry_count + 1}/{self.max_retries}): {str(e)}")
-            
-            # Generate improved SQL query
-            improved_query = self.sql_chain.invoke({
-                "query": f"The following SQL query failed: {sql_query}. Error: {str(e)}. Please fix the SQL query."
-            })
-            
-            # Retry with improved query
-            return self._execute_sql_with_retry(improved_query, retry_count + 1)
-    
-    def process_query(self, query: str) -> str:
-        """
-        Process a natural language query from start to finish.
-        
-        Args:
-            query: Natural language query
-            
-        Returns:
-            Formatted response
-        """
-        # Step 1: Generate SQL from natural language
-        sql_query = self.sql_chain.invoke({"query": query})
-        
-        # Step 2: Execute SQL with retry logic
-        execution_result = self._execute_sql_with_retry(sql_query)
-        
-        # Step 3: Format response
-        response_input = {
-            "query": query,
-            "sql_query": execution_result["sql_query"],
-            "result": execution_result["result"]
-        }
-        
-        formatted_response = self.response_chain.invoke(response_input)
-        return formatted_response
+# Define the state schema
+class QueryState(TypedDict):
+    user_question: str
+    sql_query: Optional[str]
+    sql_result: Optional[str]
+    error: Optional[str]
+    retry_count: int
+    status: Literal["GENERATING_SQL", "EXECUTING_SQL", "FORMATTING_RESPONSE", "ERROR", "COMPLETE"]
 
-# Create the chain as a unified class
-def create_nl_to_sql_chain(llm1, llm2, db, sql_prompt_template, response_prompt_template, max_retries=10):
-    """
-    Create a Natural Language to SQL chain.
+# Define the nodes of the graph
+def generate_sql(state: QueryState, llm, sql_prompt) -> QueryState:
+    """Generate SQL from natural language query"""
+    logger.info("Generating SQL query")
     
-    Args:
-        llm1: LLM for converting natural language to SQL
-        llm2: LLM for formatting the final response
-        db: Database instance with run() method
-        sql_prompt_template: Template for generating SQL from natural language
-        response_prompt_template: Template for formatting the final response
-        max_retries: Maximum number of retries for SQL execution
-        
-    Returns:
-        SQLQueryExecutor instance
-    """
-    return SQLQueryExecutor(
-        llm1=llm1,
-        llm2=llm2,
-        db=db,
-        sql_prompt_template=sql_prompt_template,
-        response_prompt_template=response_prompt_template,
-        max_retries=max_retries
-    )
+    # Format the prompt with the user question
+    formatted_prompt = sql_prompt.format(query=state["user_question"])
+    
+    # If there was an error, include it in the prompt for retry
+    if state.get("error"):
+        # Extract the specific error message for the LLM
+        error_prompt = f"""
+The previous SQL query failed with the following error:
+{state["error"]}
 
-# Example usage:
+Please fix the SQL query. Remember to:
+1. Use proper Oracle SQL syntax
+2. Use FETCH FIRST N ROWS ONLY instead of LIMIT
+3. Use SYSTIMESTAMP instead of NOW()
+4. Ensure all column names are properly quoted as "COL_NAME"
+5. Only generate the SQL query and nothing else
 """
-# Assuming you have these components:
-from langchain_openai import ChatOpenAI
-import os
+        # Add error information to the prompt
+        formatted_prompt = formatted_prompt.replace("User Question: {query}", f"User Question: {state['user_question']}\n\n{error_prompt}")
+    
+    # Create the message and invoke the LLM
+    sql_messages = [HumanMessage(content=formatted_prompt)]
+    sql_response = llm.invoke(sql_messages)
+    
+    # Extract the SQL query from the response
+    sql_query = sql_response.content.strip(";")
+    
+    logger.info(f"Generated SQL query: {sql_query}")
+    
+    return {
+        **state,
+        "sql_query": sql_query,
+        "status": "EXECUTING_SQL"
+    }
 
-# Initialize LLMs
-llm1 = ChatOpenAI(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4")
-llm2 = ChatOpenAI(api_key=os.environ["OPENAI_API_KEY"], model="gpt-3.5-turbo")
+def execute_sql(state: QueryState, db) -> QueryState:
+    """Execute SQL query"""
+    logger.info(f"Executing SQL: {state['sql_query']}")
+    
+    try:
+        # Execute the query
+        sql_result = db.run(state["sql_query"])
+        
+        return {
+            **state,
+            "sql_result": sql_result,
+            "error": None,
+            "status": "FORMATTING_RESPONSE"
+        }
+    except Exception as e:
+        error_message = str(e)
+        logger.warning(f"SQL execution error: {error_message}")
+        
+        return {
+            **state,
+            "error": error_message,
+            "retry_count": state["retry_count"] + 1,
+            "status": "ERROR"
+        }
 
-# Define prompt templates
-sql_prompt_template = PromptTemplate(
-    input_variables=["query"],
-    template="Convert the following natural language query to SQL: {query}"
-)
+def format_response(state: QueryState, llm, response_prompt) -> QueryState:
+    """Format the final response"""
+    logger.info("Formatting response")
+    
+    # For successful queries
+    if state["status"] == "FORMATTING_RESPONSE":
+        # Format the prompt with all the information
+        formatted_prompt = response_prompt.format(
+            question=state["user_question"],
+            sql_query=state["sql_query"],
+            sql_result=state["sql_result"]
+        )
+    else:
+        # For queries that failed after max retries
+        formatted_prompt = f"""
+You are an AI assistant that helps users understand data from an Oracle database.
 
-response_prompt_template = PromptTemplate(
-    input_variables=["query", "sql_query", "result"],
-    template="User query: {query}\nSQL query: {sql_query}\nQuery result: {result}\n\nProvide a well-formatted response to the user's question."
-)
+User Question: {state["user_question"]}
+SQL Query: {state["sql_query"]}
+SQL Result: Error after {state["retry_count"]} attempts: {state["error"]}
 
-# Initialize database (placeholder)
-class Database:
-    def run(self, query):
-        # This would be your actual database connection
-        return "Sample result from database"
+Your Response:
+"""
+    
+    # Create the message and invoke the LLM
+    response_messages = [HumanMessage(content=formatted_prompt)]
+    final_response = llm.invoke(response_messages)
+    
+    return {
+        **state,
+        "sql_result": final_response.content,
+        "status": "COMPLETE"
+    }
 
-db = Database()
+# Create the LangGraph
+def create_nl_to_sql_graph(llm, db, sql_prompt, response_prompt, max_retries=10):
+    """Create a LangGraph for natural language to SQL processing"""
+    
+    # Define the graph
+    workflow = StateGraph(QueryState)
+    
+    # Add nodes
+    workflow.add_node("generate_sql", lambda state: generate_sql(state, llm, sql_prompt))
+    workflow.add_node("execute_sql", lambda state: execute_sql(state, db))
+    workflow.add_node("format_response", lambda state: format_response(state, llm, response_prompt))
+    
+    # Define edges
+    workflow.add_edge("generate_sql", "execute_sql")
+    workflow.add_edge("execute_sql", "format_response")
+    workflow.add_edge("format_response", END)
+    
+    # Define conditional edges for retry logic
+    def should_retry(state):
+        # If error occurred and we haven't exceeded max retries
+        if state["status"] == "ERROR" and state["retry_count"] < max_retries:
+            return "generate_sql"
+        # If error occurred but we've reached max retries
+        elif state["status"] == "ERROR":
+            return "format_response"
+    
+    workflow.add_conditional_edges(
+        "execute_sql",
+        should_retry,
+        {
+            "generate_sql": "generate_sql",
+            "format_response": "format_response"
+        }
+    )
+    
+    # Compile the graph
+    app = workflow.compile()
+    
+    # Create a wrapper for easier use
+    class NLToSQLGraph:
+        def __init__(self, graph):
+            self.graph = graph
+        
+        def process_query(self, query: str) -> str:
+            """Process a natural language query from start to finish"""
+            # Initialize state
+            initial_state = {
+                "user_question": query,
+                "sql_query": None,
+                "sql_result": None,
+                "error": None,
+                "retry_count": 0,
+                "status": "GENERATING_SQL"
+            }
+            
+            # Execute the graph
+            for event in self.graph.stream(initial_state):
+                pass
+            
+            # Return the final state (which contains the formatted response)
+            final_state = event["state"]
+            return final_state["sql_result"]
+    
+    return NLToSQLGraph(app)
 
-# Create the chain
-nl_to_sql_chain = create_nl_to_sql_chain(
-    llm1=llm1,
-    llm2=llm2,
+# Example usage with your existing code:
+"""
+# SQL prompt template (from your code)
+sql_prompt = """
+You are an AI assistant that helps users query an Oracle database from CMDM_Product table.
+Based on the user's question, generate the appropriate SQL query.
+
+**Note : Only provide the SQL query and nothing else. Also provide the column/s name is "**
+**IMP : Generate SQL queries for an Oracle database. Avoid unsupported keywords like
+LIMIT, OFFSET, AUTO_INCREMENT, BOOLEAN, TEXT, DATETIME, and IF EXISTS. Use FETCH FIRST N ROWS ONLY
+instead of LIMIT, SEQUENCE instead of AUTO_INCREMENT, and SYSTIMESTAMP instead of NOW().
+Ensure proper Oracle SQL syntax**
+**Note : Only provide the SQL query and nothing else. **
+**Note : Also provide the column name as is "COL_NAME" i.e. in quotation mark**
+
+User Question: {query}
+
+SQL Query:"""
+
+# Response prompt template (from your code)
+response_prompt = """
+You are an AI assistant that helps users understand data from an Oracle database.
+Given the user's question, SQL query and its results, provide a clear, concise answer.
+
+User Question: {question}
+SQL Query: {sql_query}
+SQL Result: {sql_result}
+
+Your Response:
+"""
+
+# Initialize your database and LLM
+# db = Your database instance
+# llm = Your LLM instance
+
+# Create and use the graph
+nl_to_sql_graph = create_nl_to_sql_graph(
+    llm=llm, 
     db=db,
-    sql_prompt_template=sql_prompt_template,
-    response_prompt_template=response_prompt_template,
+    sql_prompt=sql_prompt,
+    response_prompt=response_prompt,
     max_retries=10
 )
 
-# Use the chain
-result = nl_to_sql_chain.process_query("How many users registered last month?")
+# Process a query
+user_question = "What are the top 3 Attribute based on total of Amount? Also include the Amount value"
+result = nl_to_sql_graph.process_query(user_question)
 print(result)
 """
