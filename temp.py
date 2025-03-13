@@ -1,237 +1,26 @@
-from typing import Dict, List, Any, Annotated, Literal, TypedDict, Union, Optional
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage
-import operator
-import logging
-import re
+Below are five reference materials formatted with their source URLs followed by a brief 4–5 line summary:
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+1) **Source URL:**  
+https://www.ibm.com/think/topics/feature-engineering  
+**Summary:**  
+IBM’s article defines feature engineering as the process of converting raw data into a machine-readable format to boost model performance. It explains how transforming, selecting, and creating features can reduce noise and improve accuracy. The resource emphasizes the importance of context and iterative refinement in crafting effective features. It also discusses common techniques like encoding, scaling, and selection.
 
-# Define the state schema
-class QueryState(TypedDict, total=False):
-    user_question: str
-    sql_query: Optional[str]
-    sql_result: Optional[str]
-    error: Optional[str]
-    retry_count: int
-    status: Literal["GENERATING_SQL", "EXECUTING_SQL", "FORMATTING_RESPONSE", "ERROR", "COMPLETE"]
+2) **Source URL:**  
+https://www.analyticsvidhya.com/blog/2021/09/complete-guide-to-feature-engineering-zero-to-hero/  
+**Summary:**  
+This comprehensive guide on Analytics Vidhya covers a wide array of feature engineering techniques using Python. It provides detailed explanations and code examples for handling missing data, encoding categorical variables, transforming features, and scaling. The article is designed to help both beginners and seasoned practitioners enhance model performance. It also explores advanced topics such as date-time feature engineering and outlier management.
 
-# Define the nodes of the graph
-def generate_sql(state: QueryState, llm, sql_prompt) -> QueryState:
-    """Generate SQL from natural language query"""
-    logger.info("Generating SQL query")
-    
-    # Format the prompt with the user question
-    formatted_prompt = sql_prompt.format(query=state["user_question"])
-    
-    # If there was an error, include it in the prompt for retry
-    if state.get("error"):
-        # Extract the specific error message for the LLM
-        error_prompt = f"""
-The previous SQL query failed with the following error:
-{state.get("error")}
+3) **Source URL:**  
+https://www.kaggle.com/code/prashant111/a-reference-guide-to-feature-engineering-methods  
+**Summary:**  
+This Kaggle notebook serves as a concise reference guide to common feature engineering methods. It offers practical examples and code snippets for tasks such as feature creation, transformation, and selection. The guide is particularly useful for competitive data science, helping practitioners quickly implement effective preprocessing strategies. It’s a handy resource for applying real-world feature engineering techniques in projects.
 
-Please fix the SQL query. Remember to:
-1. Use proper Oracle SQL syntax
-2. Use FETCH FIRST N ROWS ONLY instead of LIMIT
-3. Use SYSTIMESTAMP instead of NOW()
-4. Ensure all column names are properly quoted as "COL_NAME"
-5. Only generate the SQL query and nothing else
-"""
-        # Add error information to the prompt
-        formatted_prompt = formatted_prompt.replace("User Question: {query}", f"User Question: {state['user_question']}\n\n{error_prompt}")
-    
-    # Create the message and invoke the LLM
-    sql_messages = [HumanMessage(content=formatted_prompt)]
-    sql_response = llm.invoke(sql_messages)
-    
-    # Extract the SQL query from the response
-    sql_query = sql_response.content.strip(";")
-    
-    logger.info(f"Generated SQL query: {sql_query}")
-    
-    return {
-        **state,
-        "sql_query": sql_query,
-        "status": "EXECUTING_SQL"
-    }
+4) **Source URL:**  
+https://www.geeksforgeeks.org/what-is-feature-engineering/  
+**Summary:**  
+The GeeksforGeeks article introduces feature engineering in a beginner-friendly manner by explaining how new features are created or existing ones transformed to improve ML models. It covers the basics such as feature extraction, transformation, and selection with clear examples. The resource highlights the significance of quality input features in driving predictive performance. It is an accessible starting point for anyone new to the concept.
 
-def execute_sql(state: QueryState, db) -> QueryState:
-    """Execute SQL query"""
-    logger.info(f"Executing SQL: {state.get('sql_query', '')}")
-    
-    try:
-        # Execute the query
-        sql_result = db.run(state.get("sql_query", ""))
-        
-        return {
-            **state,
-            "sql_result": sql_result,
-            "error": None,
-            "status": "FORMATTING_RESPONSE"
-        }
-    except Exception as e:
-        error_message = str(e)
-        logger.warning(f"SQL execution error: {error_message}")
-        
-        return {
-            **state,
-            "error": error_message,
-            "retry_count": state.get("retry_count", 0) + 1,
-            "status": "ERROR"
-        }
-
-def format_response(state: QueryState, llm, response_prompt) -> QueryState:
-    """Format the final response"""
-    logger.info("Formatting response")
-    
-    # For successful queries
-    if state.get("status") == "FORMATTING_RESPONSE":
-        # Format the prompt with all the information
-        formatted_prompt = response_prompt.format(
-            question=state.get("user_question", ""),
-            sql_query=state.get("sql_query", ""),
-            sql_result=state.get("sql_result", "")
-        )
-    else:
-        # For queries that failed after max retries
-        formatted_prompt = f"""
-You are an AI assistant that helps users understand data from an Oracle database.
-
-User Question: {state.get("user_question", "")}
-SQL Query: {state.get("sql_query", "")}
-SQL Result: Error after {state.get("retry_count", 0)} attempts: {state.get("error", "Unknown error")}
-
-Your Response:
-"""
-    
-    # Create the message and invoke the LLM
-    response_messages = [HumanMessage(content=formatted_prompt)]
-    final_response = llm.invoke(response_messages)
-    
-    return {
-        **state,
-        "sql_result": final_response.content,
-        "status": "COMPLETE"
-    }
-
-# Create the LangGraph
-def create_nl_to_sql_graph(llm, db, sql_prompt, response_prompt, max_retries=10):
-    """Create a LangGraph for natural language to SQL processing"""
-    
-    # Define the graph
-    workflow = StateGraph(QueryState)
-    
-    # Add nodes
-    workflow.add_node("generate_sql", lambda state: generate_sql(state, llm, sql_prompt))
-    workflow.add_node("execute_sql", lambda state: execute_sql(state, db))
-    workflow.add_node("format_response", lambda state: format_response(state, llm, response_prompt))
-    
-    # Define edges
-    workflow.add_edge("generate_sql", "execute_sql")
-    workflow.add_edge("execute_sql", "format_response")
-    workflow.add_edge("format_response", END)
-    
-    # Define conditional edges for retry logic
-    def should_retry(state):
-        # If error occurred and we haven't exceeded max retries
-        if state.get("status") == "ERROR" and state.get("retry_count", 0) < max_retries:
-            return "generate_sql"
-        # If error occurred but we've reached max retries
-        elif state.get("status") == "ERROR":
-            return "format_response"
-        return None
-    
-    workflow.add_conditional_edges(
-        "execute_sql",
-        should_retry,
-        {
-            "generate_sql": "generate_sql",
-            "format_response": "format_response"
-        }
-    )
-    
-    # Compile the graph
-    app = workflow.compile()
-    
-    # Create a wrapper for easier use
-    class NLToSQLGraph:
-        def __init__(self, graph):
-            self.graph = graph
-        
-        def process_query(self, query: str) -> str:
-            """Process a natural language query from start to finish"""
-            # Initialize state
-            initial_state = {
-                "user_question": query,
-                "sql_query": "",
-                "sql_result": "",
-                "error": None,
-                "retry_count": 0,
-                "status": "GENERATING_SQL"
-            }
-            
-            # Execute the graph
-            final_state = None
-            for event in self.graph.stream(initial_state):
-                final_state = event["state"]
-            
-            # Return the final state (which contains the formatted response)
-            if final_state and "sql_result" in final_state:
-                return final_state["sql_result"]
-            else:
-                return "Error: Query processing failed unexpectedly."
-    
-    return NLToSQLGraph(app)
-
-# Example usage with your existing code:
-"""
-# SQL prompt template (from your code)
-sql_prompt = """
-You are an AI assistant that helps users query an Oracle database from CMDM_Product table.
-Based on the user's question, generate the appropriate SQL query.
-
-**Note : Only provide the SQL query and nothing else. Also provide the column/s name is "**
-**IMP : Generate SQL queries for an Oracle database. Avoid unsupported keywords like
-LIMIT, OFFSET, AUTO_INCREMENT, BOOLEAN, TEXT, DATETIME, and IF EXISTS. Use FETCH FIRST N ROWS ONLY
-instead of LIMIT, SEQUENCE instead of AUTO_INCREMENT, and SYSTIMESTAMP instead of NOW().
-Ensure proper Oracle SQL syntax**
-**Note : Only provide the SQL query and nothing else. **
-**Note : Also provide the column name as is "COL_NAME" i.e. in quotation mark**
-
-User Question: {query}
-
-SQL Query:"""
-
-# Response prompt template (from your code)
-response_prompt = """
-You are an AI assistant that helps users understand data from an Oracle database.
-Given the user's question, SQL query and its results, provide a clear, concise answer.
-
-User Question: {question}
-SQL Query: {sql_query}
-SQL Result: {sql_result}
-
-Your Response:
-"""
-
-# Initialize your database and LLM
-# db = Your database instance
-# llm = Your LLM instance
-
-# Create and use the graph
-nl_to_sql_graph = create_nl_to_sql_graph(
-    llm=llm, 
-    db=db,
-    sql_prompt=sql_prompt,
-    response_prompt=response_prompt,
-    max_retries=10
-)
-
-# Process a query
-user_question = "What are the top 3 Attribute based on total of Amount? Also include the Amount value"
-result = nl_to_sql_graph.process_query(user_question)
-print(result)
-"""
+5) **Source URL:**  
+https://builtin.com/articles/feature-engineering  
+**Summary:**  
+Built In’s article explains feature engineering as the art of selecting, transforming, and creating features from raw data to enhance model performance. It details key techniques such as one-hot encoding, normalization, and imputation, along with their impact on model accuracy. The article also offers insights into best practices and real-world applications across various industries. It’s ideal for data professionals looking for a clear, industry-focused overview of feature engineering.
