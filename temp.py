@@ -1,36 +1,48 @@
-1) Problem Statement
+Core Architecture Blocks
+1. Data Ingestion Layer
 
-Users waste significant time manually searching through long videos to locate specific content, with no efficient way to navigate directly to relevant moments.
-Current video platforms offer limited search functionality that typically only identifies videos, not specific timestamps or moments within videos.
-This inefficiency creates a productivity barrier for researchers, students, professionals, and content consumers who need to extract specific information from video content.
+Video Source Handler: Accepts YouTube URLs or direct video uploads
+Transcription Engine:
 
-2) Solution Approach
+Uses YouTube Transcript API for YouTube videos
+Implements OpenAI Whisper for non-YouTube video content
 
-Develop a pipeline that transcribes videos, indexes content with timestamps, and employs a multi-LLM architecture to process natural language queries and return precise video segments.
-Implement a refinement system where the first LLM identifies potential timestamp matches, and subsequent LLMs filter and rank results for relevance and accuracy.
-Create an intuitive interface that allows users to input queries, view results with timestamps, and jump directly to relevant video segments.
 
-3) Tech Stack
+Timestamp Indexer: Maps transcribed text to precise video timestamps
 
-Frontend: Streamlit for rapid development of an interactive demo interface
-Core Processing: LangChain and LangGraph for orchestrating the multi-LLM workflow and managing the processing pipeline
-Model Integration: Google's Gemini for primary LLM functions, YouTube Transcript API for initial content extraction, OpenAI's Whisper for non-YouTube video transcription
-Data Management: Vector database (e.g., Chroma or Pinecone) for efficient semantic searching of video transcript segments
+2. Processing Pipeline
 
-4) Market Positioning (ROI)
+Query Processing Unit: Analyzes and restructures user queries for optimal LLM processing
+Primary LLM Engine (Gemini): Identifies candidate segments based on semantic understanding
+Refinement LLM Engine: Filters and ranks initial results to improve precision
+Context Enrichment Module: Adds surrounding context to improve result relevance
 
-Target market includes educational institutions, corporate training departments, research organizations, and content creators who need efficient video content navigation.
-Time savings translate directly to productivity gains—reducing search time from minutes to seconds creates measurable ROI for organizations with large video repositories.
-Potential for integration with enterprise video platforms or as a value-added service for content hosting platforms creates monetization opportunities.
+3. Storage Layer
 
-5) Feasibility & Completeness
+Vector Database: Stores embeddings of transcript segments for semantic searching
+Metadata Store: Maintains video information, processed status, and user history
+Results Cache: Optimizes performance for repeated queries
 
-Core functionality is achievable within hackathon timeframe using existing APIs and open-source tools, with no need for custom model training.
-The modular approach allows for incremental development—starting with YouTube videos provides a contained scope while leaving room for expansion.
-Technical components (transcription, LLM processing, UI development) are mature enough to support reliable implementation.
+4. User Interface Layer
 
-6) Risks/Assumptions
+Query Input Interface: User-friendly search interface built with Streamlit
+Results Display Module: Shows ranked timestamps with transcript snippets
+Video Player Integration: Allows direct navigation to specific timestamps
 
-Accuracy depends on transcription quality, which may vary with audio clarity, accents, technical terminology, and background noise.
-Processing long videos may create latency issues or higher computational costs that could affect scalability.
-Multi-LLM approach increases complexity and potential points of failure, requiring careful orchestration and fallback mechanisms.
+5. Orchestration Layer
+
+LangChain Framework: Manages the LLM chain interactions
+LangGraph Controller: Handles the workflow between multiple LLMs
+Performance Monitor: Tracks system performance and response times
+
+Connection Flow
+
+User submits a video URL and search query through the Streamlit interface
+Data Ingestion Layer processes the video and generates timestamped transcripts
+Transcripts are embedded and stored in the Vector Database
+Query Processing Unit formats the user's search request
+Primary LLM Engine analyzes the query against the transcript embeddings
+Refinement LLM Engine improves result accuracy through additional filtering
+Results are ranked and enriched with contextual information
+User Interface Layer presents results with navigation options
+User can select any timestamp to jump directly to that point in the video
