@@ -268,3 +268,129 @@
    - Rate limiting at user and IP level
    - Graduated service degradation under load
    - Automated abuse detection
+
+
+
+####################################### 
+## 1) System Architecture
+### Components and their interactions
+
+1. **Streamlit UI**
+   - **Interactions**:
+     - Sends table selection to Data Processing Layer
+     - Receives and displays summary tables from Data Processing Layer
+     - Displays reason codes and attributes from LLM Services
+     - Presents generated commentary to users
+     - Forwards user modifications (dropdown selections) to SQL Template Engine
+     - Sends user chat messages to LLM Services for chatbot functionality
+     - Receives and displays chatbot responses
+
+2. **Oracle Database**
+   - **Interactions**:
+     - Provides raw data to Data Processing Layer
+     - Stores processed data received from Data Processing Layer
+     - Responds to SQL queries from SQL Template Engine
+     - Stores generated summary tables from Data Processing Layer
+
+3. **Data Processing Layer**
+   - **Interactions**:
+     - Receives table selection from Streamlit UI
+     - Retrieves raw data from Oracle Database
+     - Applies table-specific pre-processing functions
+     - Sends processed data back to Oracle Database
+     - Creates summary tables and stores them in Oracle Database
+     - Forwards summary data to LLM Services for analysis
+
+4. **LLM Services**
+   - **Interactions**:
+     - Receives summary data from Data Processing Layer
+     - Identifies reason codes and attributes and sends to Streamlit UI
+     - Receives user chat queries from Streamlit UI
+     - Sends SQL query generation requests to SQL Template Engine
+     - Receives query results from SQL Template Engine
+     - Generates commentary based on data and sends to Streamlit UI
+     - Generates chatbot responses and sends to Streamlit UI
+
+5. **SQL Template Engine**
+   - **Interactions**:
+     - Receives reason codes, attributes, and parameters from LLM Services
+     - Receives user modifications from Streamlit UI
+     - Generates SQL queries based on inputs
+     - Sends SQL queries to Oracle Database
+     - Receives query results from Oracle Database
+     - Forwards retrieved data to LLM Services for commentary generation or chatbot responses
+
+## 2) Data Flow and Processing Pipeline
+
+### End-to-End Data Flow
+
+1. **User Interaction Initiation**:
+   - User selects a table from dropdown in Streamlit UI
+   - UI sends table selection to Data Processing Layer
+
+2. **Data Preprocessing Flow**:
+   - Data Processing Layer connects to Oracle DB
+   - Retrieves selected table data
+   - Applies table-specific custom preprocessing function
+   - Stores processed data back in Oracle DB
+
+3. **Summary Table Creation Flow**:
+   - Data Processing Layer retrieves processed data
+   - Applies table-specific Python code to create summary table
+   - Stores summary table in Oracle DB
+   - Sends summary table data to LLM Services
+
+4. **Reason Code & Attribute Identification Flow**:
+   - LLM Services analyze summary table data
+   - Identify appropriate reason codes (e.g., Tax, Concession)
+   - Determine relevant attributes (e.g., Y/Y change, Q/Q change)
+   - Identify top contributing factors and columns
+   - Send identified parameters to SQL Template Engine and Streamlit UI
+
+5. **SQL Query Generation Flow**:
+   - SQL Template Engine receives reason codes, attributes, top n, and contributing columns
+   - Generates appropriate SQL queries based on these parameters
+   - Sends SQL queries to Oracle DB
+   - Receives query results with specific data for commentary
+
+6. **Commentary Generation Flow**:
+   - LLM Services receive query results from SQL Template Engine
+   - Generate natural language commentary based on data
+   - Send generated commentary to Streamlit UI for display
+
+7. **User Modification Flow - Manual Selection**:
+   - User deselects/selects reason codes, attributes, top n, or contributing columns via dropdowns
+   - Streamlit UI sends updated parameters to SQL Template Engine
+   - SQL Template Engine generates new SQL queries
+   - New data is retrieved and sent to LLM Services
+   - LLM Services generate updated commentary
+   - Updated commentary is displayed in Streamlit UI
+
+8. **User Modification Flow - Chat Interaction**:
+   - User enters natural language query/modification in chat interface
+   - Streamlit UI sends message to LLM Services
+   - For data-related queries:
+     - LLM Services generate SQL query via SQL Template Engine
+     - SQL Template Engine retrieves data from Oracle DB
+     - LLM Services generate response based on retrieved data
+   - For commentary modification requests:
+     - LLM Services modify existing commentary based on user input
+   - Response/modified commentary is sent back to Streamlit UI
+
+9. **Data Feedback Loop**:
+   - User interactions and modifications are logged
+   - System tracks which reason codes and attributes are manually selected
+   - This feedback can be used to improve LLM performance over time
+
+### Data Management Strategy
+
+- **Real-time processing**: All data processing occurs on-demand when user selects a table
+- **Caching strategy**: 
+  - Recently accessed tables' summary data is cached
+  - Generated commentaries are cached with their parameters
+  - Chat history is maintained during session
+- **Data retention**:
+  - Raw data: Persistent in Oracle DB
+  - Processed data: Stored until updated
+  - Generated commentaries: Stored with version history
+  - User modifications: Logged for improvement of system
