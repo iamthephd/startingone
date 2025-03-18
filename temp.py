@@ -9,64 +9,77 @@ for reason_code, comparison_type, amount in comparison_tuples:
     else:
         raise ValueError(f"Unsupported comparison type: {comparison_type}")
     
-    # SQL query to get differences for multiple attributes
-    columns_list = ["Attribute", "Sales", "Revenue"]  # Your list of columns to analyze
-    # Handle case where columns_list has a single element
-    columns_str = ", ".join([f'"{col}"' for col in columns_list])
+    # Initialize an empty list to store results from each column
+    all_results = []
     
-    query = f"""
-    WITH current_data AS (
-        SELECT {columns_str}, SUM("Amount") as current_amount
-        FROM {table_name}
-        WHERE "Date" = '{current_period}'
-        AND "Reason_Code" = '{reason_code}'
-        GROUP BY {columns_str}
-    ),
-    previous_data AS (
-        SELECT {columns_str}, SUM("Amount") as previous_amount
-        FROM {table_name}
-        WHERE "Date" = '{previous_period}'
-        AND "Reason_Code" = '{reason_code}'
-        GROUP BY {columns_str}
-    )
-    SELECT 
-        {', '.join([f'COALESCE(c."{col}", p."{col}") as "{col}"' for col in columns_list])},
-        COALESCE(c.current_amount, 0) as current_amount,
-        COALESCE(p.previous_amount, 0) as previous_amount,
-        COALESCE(c.current_amount, 0) - COALESCE(p.previous_amount, 0) as difference
-    FROM current_data c
-    FULL OUTER JOIN previous_data p ON {' AND '.join([f'c."{col}" = p."{col}"' for col in columns_list])}
-    """
+    # Process each column individually
+    columns_list = ["Attribute", "Revenue"]  # Your list of columns to analyze
     
-    # Using pd.read_sql to get structured output
-    df = pd.read_sql(query, db.connection)
+    for column in columns_list:
+        # SQL query to get differences for a single column
+        query = f"""
+        WITH current_data AS (
+            SELECT "{column}", SUM("Amount") as current_amount
+            FROM {table_name}
+            WHERE "Date" = '{current_period}'
+            AND "Reason_Code" = '{reason_code}'
+            GROUP BY "{column}"
+        ),
+        previous_data AS (
+            SELECT "{column}", SUM("Amount") as previous_amount
+            FROM {table_name}
+            WHERE "Date" = '{previous_period}'
+            AND "Reason_Code" = '{reason_code}'
+            GROUP BY "{column}"
+        )
+        SELECT 
+            COALESCE(c."{column}", p."{column}") as value_name,
+            COALESCE(c.current_amount, 0) as current_amount,
+            COALESCE(p.previous_amount, 0) as previous_amount,
+            COALESCE(c.current_amount, 0) - COALESCE(p.previous_amount, 0) as difference
+        FROM current_data c
+        FULL OUTER JOIN previous_data p ON c."{column}" = p."{column}"
+        """
+        
+        # Using pd.read_sql to get structured output
+        df = pd.read_sql(query, db.connection)
+        
+        # Convert difference to millions
+        df['difference_in_millions'] = df['difference'] / 1e6
+        
+        # Add column identifier
+        df['column_name'] = column
+        
+        # Add to all results
+        all_results.append(df)
     
-    # Convert difference to millions for display purposes
-    df['difference_in_millions'] = df['difference'] / 1e6
-    
-    # Create a new column to identify the column value to use as the key
-    # For each row, find the non-null value from the columns_list
-    def get_key_value(row):
-        for col in columns_list:
-            if pd.notna(row[col]):
-                return row[col]
-        return None
-    
-    df['key_value'] = df.apply(get_key_value, axis=1)
-    
-    # Add absolute difference for sorting
-    df['abs_difference'] = df['difference'].abs()
-    
-    # Get top n rows by absolute difference
-    top_n = 3  # Set your desired number
-    top_df = df.nlargest(top_n, 'abs_difference', keep='all')
-    
-    # Create a simple dictionary with key_value as keys and difference_in_millions as values
-    result_dict = {}
-    for _, row in top_df.iterrows():
-        key = row['key_value']
-        value = row['difference_in_millions']  # Already in millions
-        result_dict[key] = value
-    
-    # Store results
-    result[(reason_code, comparison_type, amount)] = result_dict
+    # Combine all results into a single dataframe
+    if all_results:
+        combined_df = pd.concat(all_results, ignore_index=True)
+        
+        # Create a structured dataframe with the required format
+        result_df = pd.DataFrame({
+            'Column': combined_df['column_name'],
+            'Top n names': combined_df['value_name'],
+            'Top n values': combined_df['difference_in_millions']
+        })
+        
+        # Add absolute difference for sorting
+        result_df['abs_difference'] = result_df['Top n values'].abs()
+        
+        # Get top n rows by absolute difference
+        top_n = 3  # Set your desired number
+        top_df = result_df.nlargest(top_n, 'abs_difference', keep='all')
+        
+        # Remove the temporary sorting column
+        top_df = top_df.drop('abs_difference', axis=1)
+        
+        # Create a simple dictionary with value_name as keys and difference_in_millions as values
+        result_dict = {}
+        for _, row in top_df.iterrows():
+            key = row['Top n names']
+            value = row['Top n values']
+            result_dict[key] = value
+        
+        # Store results
+        result[(reason_code, comparison_type, amount)] = result_dict
