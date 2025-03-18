@@ -1,36 +1,8 @@
-import os
-import time
-from typing import Dict, Optional
-from dotenv import load_dotenv
-import pandas as pd
-import oracledb
-from sqlalchemy import create_engine
-
-
-
-# STEP 0 : Setting up the DB engine
-EXCEL_DATA_PATH = "data"
-db_client_path = r"C:\\instantclient_23_7"
-
-# Loading the env variables
-load_dotenv()
-
-db_username = os.getenv('ORACLE_DB_USERNAME')
-db_password = os.getenv('ORACLE_DB_PASSWORD')
-db_host = os.getenv('ORACLE_DB_HOSTNAME')
-db_port = os.getenv('ORACLE_DB_PORTNO')
-db_service_name = os.getenv('ORACLE_DB_SERVICENAME')
-
-oracledb.init_oracle_client(lib_dir=db_client_path)
-
-engine = create_engine(f"oracle+oracledb://{db_username}:{db_password}@{db_host}:{db_port}/?service_name={db_service_name}")
-
-
 def upload_dataframe_to_oracle_with_metadata(
     df: pd.DataFrame,
     table_name: str,
     engine: create_engine,
-    config_metadata: Dict[str, Dict[str, str]],
+    config_file_path: str,
     schema: Optional[str] = None,
     if_exists: str = 'append',
     dtype_dict: Optional[Dict] = None,
@@ -50,9 +22,8 @@ def upload_dataframe_to_oracle_with_metadata(
         Name of the target table
     engine : sqlalchemy.engine.Engine
         SQLAlchemy engine instance
-    config_metadata : Dict[str, Dict[str, str]]
-        Dictionary containing metadata for each column
-        Format: {column_name: {'description': '...', 'source': '...', etc.}}
+    config_file_path : str
+        Path to the config file containing column metadata descriptions
     schema : str, optional
         Database schema name
     if_exists : str, default 'append'
@@ -69,6 +40,24 @@ def upload_dataframe_to_oracle_with_metadata(
     retry_delay : int, default 5
         Delay in seconds between retry attempts
     """
+    import time
+    import yaml
+    
+    # Load metadata from config file
+    try:
+        with open(config_file_path, 'r') as file:
+            config = yaml.safe_load(file)
+        
+        if 'metadata' not in config:
+            print("Warning: No metadata section found in config file. Proceeding without metadata.")
+            metadata = {}
+        else:
+            metadata = config['metadata']
+    except Exception as e:
+        print(f"Error reading config file: {str(e)}")
+        print("Proceeding without metadata.")
+        metadata = {}
+    
     total_rows = len(df)
     rows_processed = 0
     
@@ -77,7 +66,7 @@ def upload_dataframe_to_oracle_with_metadata(
     
     print(f"Starting upload of {total_rows} rows in {num_chunks} chunks...")
     
-    # First upload the data chunks
+    # Upload the data chunks
     for i in range(0, total_rows, chunksize):
         chunk = df.iloc[i:i + chunksize]
         chunk_num = i // chunksize + 1
@@ -119,40 +108,38 @@ def upload_dataframe_to_oracle_with_metadata(
     
     print(f"Upload completed successfully. {rows_processed} total rows uploaded.")
     
-    # After data is uploaded, add column comments based on metadata
-    try:
-        print(f"Adding column metadata comments to table {table_name}...")
-        with engine.connect() as connection:
-            for column_name, metadata in config_metadata.items():
-                # Skip if column doesn't exist in the dataframe
-                if column_name not in df.columns:
-                    print(f"Warning: Column '{column_name}' in metadata not found in dataframe, skipping...")
-                    continue
-                
-                # Create comment string from metadata dictionary
-                comment_text = ""
-                for key, value in metadata.items():
-                    # Escape single quotes in the value to prevent SQL injection
-                    safe_value = str(value).replace("'", "''")
-                    comment_text += f"{key}: {safe_value}; "
-                
-                # Remove trailing separator
-                if comment_text:
-                    comment_text = comment_text[:-2]
-                
-                # Create fully qualified table name
-                full_table_name = f"{schema}.{table_name}" if schema else table_name
-                
-                # Execute comment statement
-                comment_sql = f"""
-                COMMENT ON COLUMN {full_table_name}.{column_name} IS '{comment_text}'
-                """
-                connection.execute(comment_sql)
-                connection.commit()
-                
-        print(f"Column metadata successfully added to table {table_name}")
-        
-    except Exception as e:
-        print(f"Error adding column metadata: {str(e)}")
-        print("Data was uploaded successfully, but metadata comments could not be applied.")
-        raise
+    # If we have metadata, add column comments
+    if metadata:
+        try:
+            print(f"Adding column metadata comments to table {table_name}...")
+            metadata_applied_count = 0
+            
+            with engine.connect() as connection:
+                for column_name, description in metadata.items():
+                    # Skip if column doesn't exist in the dataframe
+                    if column_name not in df.columns:
+                        print(f"Warning: Column '{column_name}' in metadata not found in dataframe, skipping...")
+                        continue
+                    
+                    # Escape single quotes in the description to prevent SQL injection
+                    safe_description = str(description).replace("'", "''")
+                    
+                    # Create fully qualified table name
+                    full_table_name = f"{schema}.{table_name}" if schema else table_name
+                    
+                    # Execute comment statement
+                    comment_sql = f"""
+                    COMMENT ON COLUMN {full_table_name}.{column_name} IS '{safe_description}'
+                    """
+                    connection.execute(comment_sql)
+                    connection.commit()
+                    metadata_applied_count += 1
+                    
+            print(f"Column metadata successfully added to {metadata_applied_count} columns in table {table_name}")
+            
+        except Exception as e:
+            print(f"Error adding column metadata: {str(e)}")
+            print("Data was uploaded successfully, but metadata comments could not be applied.")
+            # Not raising the exception here since data upload was successful
+    else:
+        print("No metadata provided, skipping column comments.")
