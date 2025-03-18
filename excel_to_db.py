@@ -77,18 +77,47 @@ def upload_dataframe_to_oracle_with_metadata(
     
     print(f"Starting upload of {total_rows} rows in {num_chunks} chunks...")
     
-    # First, upload the data using the existing function
-    upload_dataframe_to_oracle(
-        df=df,
-        table_name=table_name,
-        engine=engine,
-        schema=schema,
-        if_exists=if_exists,
-        dtype_dict=dtype_dict,
-        chunksize=chunksize,
-        max_retries=max_retries,
-        retry_delay=retry_delay
-    )
+    # First upload the data chunks
+    for i in range(0, total_rows, chunksize):
+        chunk = df.iloc[i:i + chunksize]
+        chunk_num = i // chunksize + 1
+        retries = 0
+        
+        while retries < max_retries:
+            try:
+                # For the first chunk, handle table creation/replacement
+                if i == 0:
+                    current_if_exists = if_exists
+                else:
+                    current_if_exists = 'append'
+                
+                # Upload the chunk without using method='multi'
+                chunk.to_sql(
+                    name=table_name,
+                    con=engine,
+                    schema=schema,
+                    if_exists=current_if_exists,
+                    index=False,
+                    dtype=dtype_dict,
+                    chunksize=None  # Upload this chunk as a single transaction
+                )
+                
+                rows_processed += len(chunk)
+                print(f"Chunk {chunk_num}/{num_chunks} uploaded successfully. "
+                      f"Progress: {rows_processed}/{total_rows} rows ({(rows_processed/total_rows*100):.1f}%)")
+                break
+                
+            except Exception as e:
+                retries += 1
+                if retries < max_retries:
+                    print(f"Error uploading chunk {chunk_num}: {str(e)}")
+                    print(f"Retrying in {retry_delay} seconds... (Attempt {retries + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    raise Exception(f"Failed to upload chunk {chunk_num} after {max_retries} attempts. "
+                                  f"Last error: {str(e)}")
+    
+    print(f"Upload completed successfully. {rows_processed} total rows uploaded.")
     
     # After data is uploaded, add column comments based on metadata
     try:
