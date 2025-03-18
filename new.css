@@ -1,0 +1,105 @@
+/* Main layout adjustments */
+.main {
+    padding: 0rem 1rem;
+}
+.st-emotion-cache-1y4p8pa {
+    padding-top: 0rem;
+}
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+/* Section titles and containers */
+.section-title {
+    background-color: #0083B8;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.sub-section {
+    background-color: #f0f0f0;
+    color: #333;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.sep-line {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    border-top: 1px dashed #ccc;
+}
+
+/* Containers */
+.row-container {
+    margin-bottom: 10px;
+}
+
+.dataframe-container {
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    padding: 5px;
+    background-color: #f9f9f9;
+}
+
+.selection-box {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #f9f9f9;
+}
+
+.commentary-box {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #f5f5f5;
+}
+
+.commentary-content {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px;
+    background-color: #f5f5f5;
+    min-height: 150px;
+}
+
+/* Button styles */
+.stButton button {
+    border-radius: 5px;
+}
+
+/* Chat styles */
+.chat-container {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 10px;
+    background-color: white;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.chat-message {
+    padding: 8px;
+    border-radius: 5px;
+    margin-bottom: 5px;
+}
+
+.user-message {
+    background-color: #DCF8C6;
+    margin-left: 20%;
+}
+
+.bot-message {
+    background-color: #ECECEC;
+    margin-right: 20%;
+}
