@@ -220,39 +220,35 @@ if st.session_state.selected_file:
 
 
         # A Bottom Right - Selected Cells with fixed height and scrolling
-        with right_col:
-            st.markdown("<div class='subsection-header'>Selected Cells</div>", unsafe_allow_html=True)
+        with left_col:
+            st.markdown("<h5 style='text-align: center;'>Selection Controls</h5>", unsafe_allow_html=True)
+            
+            # Create two columns for row and column selection
+            row_col, column_col = st.columns(2)
+            
+            # Place row selection in the first column
+            with row_col:
+                row_index = st.selectbox("Select Row", edited_df.index.tolist())
+            
+            # Place column selection in the second column
+            with column_col:
+                column = st.selectbox("Select Column", edited_df.columns.tolist())
 
-            # Create a fixed-height scrollable container
-            container = st.container(height=200, border=True)
-
-            # Use the container to display the selected cells
-            with container:
-                if not file_data['selected_cells']:
-                    st.info("No cells selected")
-                else:
-                    for i, (row, col, val) in enumerate(file_data['selected_cells']):
-                        # Use a horizontal layout without nested columns
-                        cell_info = f"({row}, {col}, {val})"
-
-                        # Display cell info and remove button side by side
-                        st.markdown(
-                            f"""<div class="cell-item">
-                                <code class="cell-info">{cell_info}</code>
-                                <span>&nbsp;</span>
-                            </div>""",
-                            unsafe_allow_html=True
+            if st.button("+ Add Selection"):
+                if row_index is not None and column is not None:
+                    value = edited_df.loc[row_index, column]
+                    new_selection = (row_index, column, value)
+                    if new_selection in file_data['selected_cells']:
+                        st.warning(f"Cell ({row_index}, {column}, {value}) is already selected!")
+                    else:
+                        file_data['selected_cells'].append(new_selection)
+                        file_data['commentary'] = get_commentary(
+                            file_data['selected_cells'],
+                            st.session_state.selected_file,
+                            st.session_state.contributing_columns,
+                            st.session_state.top_n
                         )
-
-                        if st.button("❌", key=f'remove_{i}_{st.session_state.selected_file}', help=f'Remove selection'):
-                            file_data['selected_cells'].pop(i)
-                            file_data['commentary'] = get_commentary(
-                                file_data['selected_cells'],
-                                st.session_state.selected_file,
-                                st.session_state.contributing_columns,
-                                st.session_state.top_n
-                            )
-                            st.rerun()
+                        st.rerun()
 
             # Add spacing
             st.write("")
