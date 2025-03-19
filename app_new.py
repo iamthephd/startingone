@@ -1,262 +1,380 @@
-import os
-from pathlib import Path
 import streamlit as st
 import pandas as pd
+import numpy as np
+from config import load_config, save_config
 
-# Import your existing functions
-from utils.helper import read_config, get_file_config_by_path, convert_to_int, format_top_contributors, names_to_index
-from utils.ppt_export import generate_ppt
-from database.get_summary_table import *
-from database.database_process import create_oracle_engine
-from database.get_top_contributors import get_top_attributes_by_difference
-from llm.reson_code import get_reason_code
-from llm.commentary import get_commentary
-from langchain_community.utilities import SQLDatabase
-
-# Configuration
-EXCEL_DATA_PATH = "data"
-config_file = "config/config.yaml"
-config = read_config(config_file)
-
-# Cache resources
-@st.cache_resource
-def load_engine(config):
-    db_config = config.get('database', {})
-    engine = create_oracle_engine(db_config)
-    db = SQLDatabase(engine)
-    return engine, db
-
-# Load custom CSS from external file
-def load_custom_css():
-    with open("styles/custom.css", "r") as f:
-        st.markdown(f.read(), unsafe_allow_html=True)
+# Set page config
+st.set_page_config(layout="wide")
 
 # Initialize session state
-def initialize_session_state():
-    if 'file_selected' not in st.session_state:
-        st.session_state.file_selected = False
-    if 'df' not in st.session_state:
-        st.session_state.df = None
-    if 'tuples' not in st.session_state:
-        st.session_state.tuples = []
-    if 'warning_message' not in st.session_state:
-        st.session_state.warning_message = None
-    if 'insights' not in st.session_state:
-        st.session_state.insights = None
-    if 'chat_messages' not in st.session_state:
-        st.session_state.chat_messages = []
+if 'selected_file' not in st.session_state:
+    st.session_state.selected_file = None
+if 'file_data' not in st.session_state:
+    st.session_state.file_data = {}
+if 'commentary' not in st.session_state:
+    st.session_state.commentary = ""
+if 'contributing_columns' not in st.session_state:
+    config = load_config()
+    st.session_state.contributing_columns = config['contributing_columns']
+    st.session_state.top_n = config['top_n']
+if 'chatbot_messages' not in st.session_state:
+    st.session_state.chatbot_messages = []
 
-# Format display functions
-def format_tuple(tup):
-    return f"({tup[0]}, {tup[1]}, {tup[2]})"
+def get_summary_table(file_name):
+    """Return a sample DataFrame for demonstration"""
+    np.random.seed(42)
+    df = pd.DataFrame({
+        'Date': pd.date_range(start='2023-01-01', periods=10),
+        'Sales': np.random.randint(1000, 5000, 10),
+        'Revenue': np.random.randint(5000, 15000, 10),
+        'Customers': np.random.randint(100, 500, 10),
+        'Region': np.random.choice(['North', 'South', 'East', 'West'], 10),
+        'Category': np.random.choice(['Electronics', 'Clothing', 'Food'], 10)
+    })
+    return df
 
-def format_values(x):
-    return f"${x} M"
+def get_reason_code(df, file_name):
+    """Return significant differences as tuples"""
+    return [
+        (0, 'Sales', df.loc[0, 'Sales']),
+        (2, 'Revenue', df.loc[2, 'Revenue'])
+    ]
 
-# App layout
-def main():
-    st.set_page_config(
-        page_title="LLM Commentary Generation", 
-        layout="wide",
-        initial_sidebar_state="expanded"
+def get_commentary(selected_cells, file_name, contributing_columns, top_n):
+    """Generate commentary based on selected cells and parameters"""
+    if not selected_cells:
+        return "No cells selected for analysis."
+
+    commentary = f"Analysis based on {len(selected_cells)} selected data points:\n\n"
+    for row, col, val in selected_cells:
+        commentary += f"- {col} value at row {row} is {val}\n"
+
+    if contributing_columns:
+        commentary += f"\nContributing columns considered: {', '.join(contributing_columns)}"
+
+    commentary += f"\nAnalyzing top {top_n} significant factors."
+    return commentary
+
+def modify_commentary(user_comment):
+    """Modify selected cells, contributing columns and top_n based on user comment"""
+    if "focus on sales" in user_comment.lower():
+        st.session_state.contributing_columns = ['Sales', 'Revenue']
+        st.session_state.top_n = 3
+        save_config({
+            'contributing_columns': st.session_state.contributing_columns,
+            'top_n': st.session_state.top_n
+        })
+    elif "show more items" in user_comment.lower():
+        st.session_state.top_n = min(10, st.session_state.top_n + 2)
+        save_config({
+            'contributing_columns': st.session_state.contributing_columns,
+            'top_n': st.session_state.top_n
+        })
+    elif "show fewer items" in user_comment.lower():
+        st.session_state.top_n = max(1, st.session_state.top_n - 2)
+        save_config({
+            'contributing_columns': st.session_state.contributing_columns,
+            'top_n': st.session_state.top_n
+        })
+
+    return get_commentary(
+        st.session_state.selected_cells,
+        st.session_state.selected_file,
+        st.session_state.contributing_columns,
+        st.session_state.top_n
     )
-    
-    load_custom_css()
-    initialize_session_state()
-    
-    # Load DB engine
-    st.session_state.engine, st.session_state.db = load_engine(config)
-    
-    # App Header
-    st.markdown('<h2 style="text-align: center; color: #0083B8;">LLM Commentary Generation</h2>', unsafe_allow_html=True)
-    
-    # Move file selection to sidebar
-    with st.sidebar:
-        st.markdown('<div class="section-title">Slide Selection</div>', unsafe_allow_html=True)
-        excel_files = [f for f in os.listdir(EXCEL_DATA_PATH) if f.endswith('.xlsx')]
-        file_list = [Path(f).stem for f in excel_files]
-        
-        # File selection in a single horizontal line
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            selected_file = st.selectbox(
-                "", 
-                options=file_list,
-                key="selected_file",
+
+def process_chatbot_query(query):
+    """Process chatbot queries and return responses"""
+    responses = {
+        "help": "I can help you analyze the data and understand trends.",
+        "data": "The current dataset shows sales and revenue information.",
+        "analysis": "I can help you analyze specific data points or trends.",
+        "trends": "Looking at the data, there are some interesting patterns in sales and revenue.",
+        "summary": "The data shows various metrics including sales, revenue, and customer information across different regions and categories."
+    }
+
+    query = query.lower()
+    for key, response in responses.items():
+        if key in query:
+            return response
+    return "I'm here to help with your data analysis questions. Try asking about specific metrics or trends."
+
+# Center-aligned title with smaller font
+st.markdown("<h2 style='text-align: center;'>Interactive Dashboard</h2>", unsafe_allow_html=True)
+
+# Initialize file data structure if needed
+def initialize_file_data(file_name):
+    """Initialize data for a file if it doesn't exist"""
+    if file_name not in st.session_state.file_data:
+        df = get_summary_table(file_name)
+        selected_cells = get_reason_code(df, file_name)
+        commentary = get_commentary(
+            selected_cells,
+            file_name,
+            st.session_state.contributing_columns,
+            st.session_state.top_n
+        )
+        st.session_state.file_data[file_name] = {
+            'df': df,
+            'selected_cells': selected_cells,
+            'commentary': commentary
+        }
+    return st.session_state.file_data[file_name]
+
+# Sidebar
+with st.sidebar:
+    file_list = ["File1", "File2", "File3"]
+    selected_file = st.selectbox("Select File", file_list)
+    if st.button("Ok"):
+        st.session_state.selected_file = selected_file
+        initialize_file_data(selected_file)
+
+# Only show main content after file selection
+if st.session_state.selected_file:
+    file_data = initialize_file_data(st.session_state.selected_file)
+
+    col_a, col_b, col_c = st.columns([3, 2, 1])
+
+    # Column A
+    with col_a:
+        st.markdown('<div class="column-container section-border">', unsafe_allow_html=True)
+
+        # A Top - Data Overview
+        st.markdown("<h4 style='text-align: center;'>Data Overview</h4>", unsafe_allow_html=True)
+        df = file_data['df']
+        edited_df = st.data_editor(df, key=f"data_editor_{st.session_state.selected_file}", hide_index=False)
+
+        # A Bottom - Cell Selection with subsection border
+        st.markdown("<div class='subsection-border'><h4 style='text-align: center;'>Cell Selection</h4>", unsafe_allow_html=True)
+        left_col, right_col = st.columns(2)
+
+        # A Bottom Left - Selection Controls
+        with left_col:
+            st.markdown("<h5 style='text-align: center;'>Selection Controls</h5>", unsafe_allow_html=True)
+            row_index = st.selectbox("Select Row", edited_df.index.tolist())
+            column = st.selectbox("Select Column", edited_df.columns.tolist())
+
+            if st.button("+ Add Selection"):
+                if row_index is not None and column is not None:
+                    value = edited_df.loc[row_index, column]
+                    new_selection = (row_index, column, value)
+                    if new_selection in file_data['selected_cells']:
+                        st.warning(f"Cell ({row_index}, {column}, {value}) is already selected!")
+                    else:
+                        file_data['selected_cells'].append(new_selection)
+                        file_data['commentary'] = get_commentary(
+                            file_data['selected_cells'],
+                            st.session_state.selected_file,
+                            st.session_state.contributing_columns,
+                            st.session_state.top_n
+                        )
+                        st.rerun()
+
+            # Additional Settings in an expander
+            with st.expander("Additional Settings", expanded=False):
+                contributing_cols = st.multiselect(
+                    "Contributing Columns",
+                    edited_df.columns.tolist(),
+                    default=st.session_state.contributing_columns
+                )
+
+                top_n = st.selectbox(
+                    "Top N",
+                    range(1, 11),
+                    index=st.session_state.top_n - 1
+                )
+
+                if st.button("Apply Changes", use_container_width=True):
+                    if contributing_cols != st.session_state.contributing_columns or top_n != st.session_state.top_n:
+                        st.session_state.contributing_columns = contributing_cols
+                        st.session_state.top_n = top_n
+                        save_config({
+                            'contributing_columns': contributing_cols,
+                            'top_n': top_n
+                        })
+                        file_data['commentary'] = get_commentary(
+                            file_data['selected_cells'],
+                            st.session_state.selected_file,
+                            st.session_state.contributing_columns,
+                            st.session_state.top_n
+                        )
+
+
+        # A Bottom Right - Selected Cells with fixed height and scrolling
+        with right_col:
+            st.markdown("<h5 style='text-align: center;'>Selected Cells</h5>", unsafe_allow_html=True)
+
+            # Create a fixed-height scrollable container
+            container = st.container(height=200, border=True)
+
+            # Use the container to display the selected cells
+            with container:
+                if not file_data['selected_cells']:
+                    st.info("No cells selected")
+                else:
+                    for i, (row, col, val) in enumerate(file_data['selected_cells']):
+                        # Use a horizontal layout without nested columns
+                        cell_info = f"({row}, {col}, {val})"
+
+                        # Display cell info and remove button side by side
+                        st.markdown(
+                            f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                <code style="background-color: var(--code-bg-color); color: var(--code-text-color); padding: 3px 6px; border-radius: 3px; flex-grow: 1;">{cell_info}</code>
+                                <span>&nbsp;</span>
+                            </div>""",
+                            unsafe_allow_html=True
+                        )
+
+                        if st.button("❌", key=f'remove_{i}_{st.session_state.selected_file}', help=f'Remove selection'):
+                            file_data['selected_cells'].pop(i)
+                            file_data['commentary'] = get_commentary(
+                                file_data['selected_cells'],
+                                st.session_state.selected_file,
+                                st.session_state.contributing_columns,
+                                st.session_state.top_n
+                            )
+                            st.rerun()
+
+            # Add spacing
+            st.write("")
+
+            # Add buttons without column nesting
+            if st.button("Clear All", key="clear_all"):
+                file_data['selected_cells'] = []
+                file_data['commentary'] = get_commentary(
+                    file_data['selected_cells'],
+                    st.session_state.selected_file,
+                    st.session_state.contributing_columns,
+                    st.session_state.top_n
+                )
+                st.rerun()
+
+            st.write("") # Add minimal spacing between buttons
+
+            if st.button("Reset", key="reset"):
+                file_data['selected_cells'] = get_reason_code(file_data['df'], st.session_state.selected_file)
+                file_data['commentary'] = get_commentary(
+                    file_data['selected_cells'],
+                    st.session_state.selected_file,
+                    st.session_state.contributing_columns,
+                    st.session_state.top_n
+                )
+                st.rerun()
+
+        if st.button("Modify Commentary", use_container_width=True):
+            file_data['commentary'] = get_commentary(
+                file_data['selected_cells'],
+                st.session_state.selected_file,
+                st.session_state.contributing_columns,
+                st.session_state.top_n
+            )
+        st.markdown('</div></div>', unsafe_allow_html=True)
+
+    # Column B - Commentary
+    with col_b:
+        st.markdown('<div class="column-container section-border">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center;'>Commentary</h4>", unsafe_allow_html=True)
+        if file_data['commentary']:
+            st.text_area(
+                label="Commentary",
+                value=file_data['commentary'],
+                height=200,
+                key=f"commentary_display_{st.session_state.selected_file}",
                 label_visibility="collapsed"
             )
-        with col2:
-            if st.button("Load", use_container_width=True):
-                # Handle file selection
-                st.session_state.file_selected = True
-                filename = st.session_state.selected_file
-                st.session_state.file_config = get_file_config_by_path(config, filename)
-                summary_func_name = st.session_state.file_config.get('summary_table_function')
-                summary_func = globals()[summary_func_name]
-                df = summary_func(st.session_state.engine)
-                df = df.map(convert_to_int)
-                df = df.drop(columns=['Y/Y %', 'Q/Q %'])
-                
-                if df is not None:
-                    st.session_state.df = df
-                    # Automatically select tuples using get_reason_code
-                    st.session_state.tuples = get_reason_code(df, st.session_state.selected_file)
-                    st.session_state.warning_message = None
-                    st.session_state.insights = None
-                st.rerun()
-    
-    # Main content
-    main_container = st.container()
-    
-    with main_container:
-        if st.session_state.file_selected and st.session_state.df is not None:
-            # Summary Table
-            st.markdown('<div class="section-title">Summary Table</div>', unsafe_allow_html=True)
-            with st.container():
-                formatted_df = st.session_state.df.style.format(format_values)
-                st.dataframe(formatted_df, use_container_width=True, height=300)
-            
-            # Two blocks under the summary table
-            left_col, right_col = st.columns(2)
-            
-            # Left block - Selection controls
-            with left_col:
-                st.markdown('<div class="section-title">Selection Controls</div>', unsafe_allow_html=True)
-                
-                # Use a form to prevent rerunning on every change
-                with st.form(key="manual_selection_form"):
-                    # Row 1 - Reason code and column selection
-                    st.markdown('<div class="sub-section">Reason Code and Column Selection</div>', unsafe_allow_html=True)
-                    sel_col1, sel_col2 = st.columns(2)
-                    with sel_col1:
-                        index_name = st.selectbox(
-                            "Select Reason Code",
-                            options=st.session_state.df.index,
-                        )
-                    
-                    with sel_col2:
-                        column_name = st.selectbox(
-                            "Select Column",
-                            options=["Y/Y $", "Q/Q $"],
-                        )
-                    
-                    # Row 2 - Contributing columns and Top n (separated from the above)
-                    st.markdown('<hr class="sep-line">', unsafe_allow_html=True)
-                    st.markdown('<div class="sub-section">Analysis Parameters</div>', unsafe_allow_html=True)
-                    cont_col1, cont_col2 = st.columns(2)
-                    with cont_col1:
-                        contributing_cols = st.multiselect(
-                            "Contributing Columns",
-                            options=["Customer", "Product", "Region", "Channel"],
-                            default=["Customer", "Product"]
-                        )
-                    
-                    with cont_col2:
-                        top_n = st.selectbox(
-                            "Top n",
-                            options=list(range(1, 11)),
-                            index=2
-                        )
-                    
-                    # Form submission
-                    submitted = st.form_submit_button("+ Add Selection", use_container_width=True)
-                    if submitted:
-                        if index_name and column_name:
-                            value = st.session_state.df.loc[index_name, column_name]
-                            new_tuple = (index_name, column_name, value)
-                            if new_tuple not in st.session_state.tuples:
-                                st.session_state.tuples.append(new_tuple)
-                                st.session_state.insights = None
-                
-                # Reset and clear buttons
-                btn_col1, btn_col2 = st.columns(2)
-                with btn_col1:
-                    if st.button("🔄 Reset", use_container_width=True):
-                        st.session_state.tuples = get_reason_code(st.session_state.df, st.session_state.selected_file)
-                        st.rerun()
-                
-                with btn_col2:
-                    if st.button("🗑️ Clear All", use_container_width=True):
-                        st.session_state.tuples = []
-                        st.rerun()
-            
-            # Right block - Current Selections
-            with right_col:
-                st.markdown('<div class="section-title">Current Selections</div>', unsafe_allow_html=True)
-                selection_container = st.container()
-                
-                # Display current selections
-                with selection_container:
-                    if not st.session_state.tuples:
-                        st.info("No selections yet. Use the controls on the left to add selections.")
-                    else:
-                        for i, tup in enumerate(st.session_state.tuples):
-                            cols = st.columns([10, 1])
-                            with cols[0]:
-                                st.code(format_tuple(tup), language=None)
-                            with cols[1]:
-                                if st.button("🗑️", key=f"delete_{i}"):
-                                    st.session_state.tuples.pop(i)
-                                    st.session_state.insights = None
-                                    st.rerun()
-            
-            # Commentary section
-            st.markdown('<div class="section-title">Generated Commentary</div>', unsafe_allow_html=True)
-            with st.container():
-                if not st.session_state.insights and st.session_state.tuples:
-                    if st.button("Generate Commentary", use_container_width=True):
-                        table_name = st.session_state.file_config.get('table_name')
-                        top_contributors = get_top_attributes_by_difference(
-                            st.session_state.db,
-                            st.session_state.tuples, 
-                            table_name
-                        )
-                        top_contributors_formatted = format_top_contributors(top_contributors)
-                        st.session_state.insights = get_commentary(
-                            top_contributors_formatted, 
-                            st.session_state.selected_file
-                        )
-                        st.rerun()
-                
-                # Display generated commentary if available
-                if st.session_state.insights:
-                    commentary_tabs = st.tabs(["Y/Y Commentary", "Q/Q Commentary"])
-                    
-                    with commentary_tabs[0]:
-                        st.markdown('<div class="commentary-content">', unsafe_allow_html=True)
-                        st.text("Y/Y Commentary:")
-                        st.text("RMA ($ -44 million): The overall decline of $44 million is mainly due to World Wide Technology Holding Company Inc's negative contribution of $50 million, partially offset by BT Group PLC's positive contribution of $3 million, while Red River Computer Company Inc also contributed negatively with $3 million.")
-                        st.text("...")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    with commentary_tabs[1]:
-                        st.markdown('<div class="commentary-content">', unsafe_allow_html=True)
-                        st.text("Q/Q Commentary:")
-                        st.text("RMA ($ -42 million): The overall decline of $42 million is mainly due to World Wide Technology Holding Company Inc's negative contribution of $48 million, partially offset by Cisco Systems Inc's positive contribution of $5 million, while Red River Computer Company Inc also contributed negatively with $3 million.")
-                        st.text("...")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Commentary modification
-                    if st.button("Modify Commentary", use_container_width=True):
-                        st.session_state.show_chat = True
-                    
-                    # Chat input for modifying commentary
-                    if st.session_state.get('show_chat', False):
-                        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-                        # Display chat history
-                        for role, message in st.session_state.chat_messages:
-                            message_class = "user-message" if role == "user" else "bot-message"
-                            st.markdown(f'<div class="chat-message {message_class}">{message}</div>', unsafe_allow_html=True)
-                        
-                        # Chat input
-                        chat_input = st.text_input("Enter your comments here...", key="commentary_chat")
-                        if chat_input:
-                            # Process user input
-                            st.session_state.chat_messages.append(("user", chat_input))
-                            # Add bot response (would be replaced with LLM response)
-                            st.session_state.chat_messages.append(("bot", "I'll update the commentary based on your feedback."))
-                            st.rerun()
-                        st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("Click 'Modify Commentary' to generate analysis")
 
-if __name__ == "__main__":
-    main()
+        user_comment = st.text_input("Type to modify analysis", key=f"user_comment_input_{st.session_state.selected_file}")
+        if st.button("Update Commentary", key=f"update_commentary_btn_{st.session_state.selected_file}"):
+            if user_comment:
+                if "focus on sales" in user_comment.lower():
+                    st.session_state.contributing_columns = ['Sales', 'Revenue']
+                    st.session_state.top_n = 3
+                    save_config({
+                        'contributing_columns': st.session_state.contributing_columns,
+                        'top_n': st.session_state.top_n
+                    })
+                elif "show more items" in user_comment.lower():
+                    st.session_state.top_n = min(10, st.session_state.top_n + 2)
+                    save_config({
+                        'contributing_columns': st.session_state.contributing_columns,
+                        'top_n': st.session_state.top_n
+                    })
+                elif "show fewer items" in user_comment.lower():
+                    st.session_state.top_n = max(1, st.session_state.top_n - 2)
+                    save_config({
+                        'contributing_columns': st.session_state.contributing_columns,
+                        'top_n': st.session_state.top_n
+                    })
+
+                file_data['commentary'] = get_commentary(
+                    file_data['selected_cells'],
+                    st.session_state.selected_file,
+                    st.session_state.contributing_columns,
+                    st.session_state.top_n
+                )
+                st.rerun()
+            else:
+                st.error("Please provide comments to update the commentary")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Column C - Chatbot
+    with col_c:
+        st.markdown('<div class="column-container section-border">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center;'>Chatbot</h4>", unsafe_allow_html=True)
+
+        main_container = st.container(border=True)
+        with main_container:
+            message_container = st.container(height=300)
+
+            with message_container:
+                if not st.session_state.chatbot_messages:
+                    st.info("Type a message to start chatting")
+                else:
+                    for message in st.session_state.chatbot_messages:
+                        if message.startswith("You: "):
+                            st.markdown(
+                                f"""
+                                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                                    <div style="background-color: #DCF8C6; border-radius: 10px; padding: 8px 12px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
+                                        {message[4:]}
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                        else:
+                            st.markdown(
+                                f"""
+                                <div style="display: flex; justify-content: flex-start; margin-bottom: 10px;">
+                                    <div style="background-color: white; border-radius: 10px; padding: 8px 12px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
+                                        {message[5:]}
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+
+            st.markdown('<hr style="margin: 5px 0;">', unsafe_allow_html=True)
+
+            chatbot_input = st.text_input(
+                "Message",
+                placeholder="Type a message...",
+                label_visibility="collapsed",
+                key="chatbot_input"
+            )
+
+            send_button = st.button("Send", key="send_chatbot", use_container_width=True)
+
+            if send_button and chatbot_input:
+                st.session_state.chatbot_messages.append(f"You: {chatbot_input}")
+                response = process_chatbot_query(chatbot_input)
+                st.session_state.chatbot_messages.append(f"Bot: {response}")
+                st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+else:
+    st.info("Please select a file from the sidebar and click 'Ok' to begin analysis.")
