@@ -81,6 +81,23 @@ body {
     font-size: 0.85rem;
 }
 
+/* Selectors container for side by side dropdowns */
+.selectors-container {
+    margin-bottom: 1rem;
+}
+
+.selector-label {
+    font-weight: 500;
+    color: #34495e;
+    margin-bottom: 0.5rem;
+}
+
+/* Make row and column selectors appear side by side using CSS */
+/* Streamlit will add these selector elements in the DOM */
+[data-testid="stFormSubmitButton"] {
+    padding-top: 1rem;
+}
+
 /* Data editor styling */
 [data-testid="stDataFrame"] {
     border: 1px solid #e0e0e0;
@@ -167,4 +184,17 @@ button[kind="secondary"]:hover {
     border-radius: 4px;
     border: 1px solid #e0e0e0;
     background-color: #f9f9f9;
+}
+
+/* Style the row and column selectors to be side by side */
+div[data-testid="stHorizontalBlock"] > div:first-child [data-baseweb="select"] {
+    display: inline-block;
+    width: 48%;
+    margin-right: 2%;
+}
+
+div[data-testid="stHorizontalBlock"] > div:first-child [data-baseweb="select"] + [data-baseweb="select"] {
+    display: inline-block;
+    width: 48%;
+    margin-left: 2%;
 }

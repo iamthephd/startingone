@@ -162,12 +162,16 @@ if st.session_state.selected_file:
         with left_col:
             st.markdown("<div class='subsection-header'>Selection Controls</div>", unsafe_allow_html=True)
             
-            # Place row and column selectors side by side
-            row_col1, row_col2 = st.columns(2)
-            with row_col1:
-                row_index = st.selectbox("Select Row", edited_df.index.tolist())
-            with row_col2:
-                column = st.selectbox("Select Column", edited_df.columns.tolist())
+            # Use a custom HTML layout for side-by-side selectors without nested columns
+            st.markdown("<div class='selectors-container'>", unsafe_allow_html=True)
+            st.markdown("<div class='selector-label'>Select Row and Column</div>", unsafe_allow_html=True)
+            
+            # Create the selectors in a single row using HTML styling
+            row_col_container = st.container()
+            row_index = row_col_container.selectbox("Select Row", edited_df.index.tolist(), key="row_selector", label_visibility="collapsed")
+            column = row_col_container.selectbox("Select Column", edited_df.columns.tolist(), key="column_selector", label_visibility="collapsed")
+            
+            st.markdown("</div>", unsafe_allow_html=True)
 
             if st.button("+ Add Selection", use_container_width=True):
                 if row_index is not None and column is not None:
@@ -253,7 +257,7 @@ if st.session_state.selected_file:
             # Add spacing
             st.write("")
 
-            # Remove the "Clear All" button and keep only the "Reset" button
+            # Only keep the Reset button (removed Clear All)
             if st.button("Reset", key="reset", use_container_width=True):
                 file_data['selected_cells'] = get_reason_code(file_data['df'], st.session_state.selected_file)
                 file_data['commentary'] = get_commentary(
