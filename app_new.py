@@ -6,6 +6,14 @@ from config import load_config, save_config
 # Set page config
 st.set_page_config(layout="wide")
 
+# Load custom CSS
+def load_css():
+    with open("style.css", "r") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+# Call the function to load CSS
+load_css()
+
 # Initialize session state
 if 'selected_file' not in st.session_state:
     st.session_state.selected_file = None
@@ -101,7 +109,7 @@ def process_chatbot_query(query):
     return "I'm here to help with your data analysis questions. Try asking about specific metrics or trends."
 
 # Center-aligned title with smaller font
-st.markdown("<h2 style='text-align: center;'>Interactive Dashboard</h2>", unsafe_allow_html=True)
+st.markdown("<h2 class='app-title'>Interactive Dashboard</h2>", unsafe_allow_html=True)
 
 # Initialize file data structure if needed
 def initialize_file_data(file_name):
@@ -124,9 +132,10 @@ def initialize_file_data(file_name):
 
 # Sidebar
 with st.sidebar:
+    st.markdown("<div class='sidebar-header'>File Selection</div>", unsafe_allow_html=True)
     file_list = ["File1", "File2", "File3"]
     selected_file = st.selectbox("Select File", file_list)
-    if st.button("Ok"):
+    if st.button("Ok", use_container_width=True):
         st.session_state.selected_file = selected_file
         initialize_file_data(selected_file)
 
@@ -138,24 +147,29 @@ if st.session_state.selected_file:
 
     # Column A
     with col_a:
-        st.markdown('<div class="column-container section-border">', unsafe_allow_html=True)
+        st.markdown('<div class="column-container">', unsafe_allow_html=True)
 
         # A Top - Data Overview
-        st.markdown("<h4 style='text-align: center;'>Data Overview</h4>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Data Overview</div>", unsafe_allow_html=True)
         df = file_data['df']
         edited_df = st.data_editor(df, key=f"data_editor_{st.session_state.selected_file}", hide_index=False)
 
         # A Bottom - Cell Selection with subsection border
-        st.markdown("<div class='subsection-border'><h4 style='text-align: center;'>Cell Selection</h4>", unsafe_allow_html=True)
+        st.markdown("<div class='subsection'><div class='section-header'>Cell Selection</div>", unsafe_allow_html=True)
         left_col, right_col = st.columns(2)
 
         # A Bottom Left - Selection Controls
         with left_col:
-            st.markdown("<h5 style='text-align: center;'>Selection Controls</h5>", unsafe_allow_html=True)
-            row_index = st.selectbox("Select Row", edited_df.index.tolist())
-            column = st.selectbox("Select Column", edited_df.columns.tolist())
+            st.markdown("<div class='subsection-header'>Selection Controls</div>", unsafe_allow_html=True)
+            
+            # Place row and column selectors side by side
+            row_col1, row_col2 = st.columns(2)
+            with row_col1:
+                row_index = st.selectbox("Select Row", edited_df.index.tolist())
+            with row_col2:
+                column = st.selectbox("Select Column", edited_df.columns.tolist())
 
-            if st.button("+ Add Selection"):
+            if st.button("+ Add Selection", use_container_width=True):
                 if row_index is not None and column is not None:
                     value = edited_df.loc[row_index, column]
                     new_selection = (row_index, column, value)
@@ -203,7 +217,7 @@ if st.session_state.selected_file:
 
         # A Bottom Right - Selected Cells with fixed height and scrolling
         with right_col:
-            st.markdown("<h5 style='text-align: center;'>Selected Cells</h5>", unsafe_allow_html=True)
+            st.markdown("<div class='subsection-header'>Selected Cells</div>", unsafe_allow_html=True)
 
             # Create a fixed-height scrollable container
             container = st.container(height=200, border=True)
@@ -219,8 +233,8 @@ if st.session_state.selected_file:
 
                         # Display cell info and remove button side by side
                         st.markdown(
-                            f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                                <code style="background-color: var(--code-bg-color); color: var(--code-text-color); padding: 3px 6px; border-radius: 3px; flex-grow: 1;">{cell_info}</code>
+                            f"""<div class="cell-item">
+                                <code class="cell-info">{cell_info}</code>
                                 <span>&nbsp;</span>
                             </div>""",
                             unsafe_allow_html=True
@@ -239,20 +253,8 @@ if st.session_state.selected_file:
             # Add spacing
             st.write("")
 
-            # Add buttons without column nesting
-            if st.button("Clear All", key="clear_all"):
-                file_data['selected_cells'] = []
-                file_data['commentary'] = get_commentary(
-                    file_data['selected_cells'],
-                    st.session_state.selected_file,
-                    st.session_state.contributing_columns,
-                    st.session_state.top_n
-                )
-                st.rerun()
-
-            st.write("") # Add minimal spacing between buttons
-
-            if st.button("Reset", key="reset"):
+            # Remove the "Clear All" button and keep only the "Reset" button
+            if st.button("Reset", key="reset", use_container_width=True):
                 file_data['selected_cells'] = get_reason_code(file_data['df'], st.session_state.selected_file)
                 file_data['commentary'] = get_commentary(
                     file_data['selected_cells'],
@@ -273,8 +275,8 @@ if st.session_state.selected_file:
 
     # Column B - Commentary
     with col_b:
-        st.markdown('<div class="column-container section-border">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center;'>Commentary</h4>", unsafe_allow_html=True)
+        st.markdown('<div class="column-container">', unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Commentary</div>", unsafe_allow_html=True)
         if file_data['commentary']:
             st.text_area(
                 label="Commentary",
@@ -287,7 +289,7 @@ if st.session_state.selected_file:
             st.info("Click 'Modify Commentary' to generate analysis")
 
         user_comment = st.text_input("Type to modify analysis", key=f"user_comment_input_{st.session_state.selected_file}")
-        if st.button("Update Commentary", key=f"update_commentary_btn_{st.session_state.selected_file}"):
+        if st.button("Update Commentary", key=f"update_commentary_btn_{st.session_state.selected_file}", use_container_width=True):
             if user_comment:
                 if "focus on sales" in user_comment.lower():
                     st.session_state.contributing_columns = ['Sales', 'Revenue']
@@ -322,8 +324,8 @@ if st.session_state.selected_file:
 
     # Column C - Chatbot
     with col_c:
-        st.markdown('<div class="column-container section-border">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center;'>Chatbot</h4>", unsafe_allow_html=True)
+        st.markdown('<div class="column-container">', unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Chatbot</div>", unsafe_allow_html=True)
 
         main_container = st.container(border=True)
         with main_container:
@@ -337,8 +339,8 @@ if st.session_state.selected_file:
                         if message.startswith("You: "):
                             st.markdown(
                                 f"""
-                                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-                                    <div style="background-color: #DCF8C6; border-radius: 10px; padding: 8px 12px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
+                                <div class="chat-message user-message">
+                                    <div class="message-content">
                                         {message[4:]}
                                     </div>
                                 </div>
@@ -348,8 +350,8 @@ if st.session_state.selected_file:
                         else:
                             st.markdown(
                                 f"""
-                                <div style="display: flex; justify-content: flex-start; margin-bottom: 10px;">
-                                    <div style="background-color: white; border-radius: 10px; padding: 8px 12px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
+                                <div class="chat-message bot-message">
+                                    <div class="message-content">
                                         {message[5:]}
                                     </div>
                                 </div>
@@ -357,7 +359,7 @@ if st.session_state.selected_file:
                                 unsafe_allow_html=True
                             )
 
-            st.markdown('<hr style="margin: 5px 0;">', unsafe_allow_html=True)
+            st.markdown('<hr class="chat-divider">', unsafe_allow_html=True)
 
             chatbot_input = st.text_input(
                 "Message",
@@ -377,4 +379,6 @@ if st.session_state.selected_file:
         st.markdown('</div>', unsafe_allow_html=True)
 
 else:
+    st.markdown('<div class="welcome-message">', unsafe_allow_html=True)
     st.info("Please select a file from the sidebar and click 'Ok' to begin analysis.")
+    st.markdown('</div>', unsafe_allow_html=True)
