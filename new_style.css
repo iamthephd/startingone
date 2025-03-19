@@ -117,6 +117,13 @@ button[kind="secondary"]:hover {
     background-color: #2980b9;
 }
 
+/* Fix for button text color when clicked */
+.stButton button:active,
+.stButton button:focus {
+    color: white !important; /* Override any default behavior */
+    background-color: #2980b9;
+}
+
 /* Chatbot styles */
 .chat-message {
     display: flex;
@@ -186,14 +193,19 @@ button[kind="secondary"]:hover {
     background-color: #f9f9f9;
 }
 
-/* Style the row and column selectors to be side by side */
-div[data-testid="stHorizontalBlock"] > div:first-child [data-baseweb="select"] {
+/* Fix dropdown sizing - removed the width constraints and inline-block display */
+div[data-baseweb="select"] {
+    width: 100%; /* Allow dropdowns to take their natural width */
+}
+
+/* Only style side-by-side dropdowns where needed */
+.side-by-side-selectors div[data-baseweb="select"] {
     display: inline-block;
     width: 48%;
     margin-right: 2%;
 }
 
-div[data-testid="stHorizontalBlock"] > div:first-child [data-baseweb="select"] + [data-baseweb="select"] {
+.side-by-side-selectors div[data-baseweb="select"] + div[data-baseweb="select"] {
     display: inline-block;
     width: 48%;
     margin-left: 2%;
