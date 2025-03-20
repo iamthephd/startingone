@@ -1,0 +1,14 @@
+# Database configuration
+database:
+  connection_string: 'sqlite:///dev.db'  # Default development database
+
+# Excel files configuration
+excel_files:
+  file1.xlsx:
+    table_name: 'summary_table'
+    contributing_columns: ['Category', 'Region', 'Product']
+    top_n: 5
+  file2.xlsx:
+    table_name: 'summary_table'
+    contributing_columns: ['Category', 'Region', 'Product']
+    top_n: 5

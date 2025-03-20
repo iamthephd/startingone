@@ -1,0 +1,50 @@
+/* Main header styling */
+.main-header {
+    color: var(--bs-primary);
+    padding: 1rem 0;
+    text-align: center;
+}
+
+/* Section headers */
+.section-header {
+    font-size: 1.2rem;
+    font-weight: 500;
+    margin: 1rem 0;
+    padding: 0.5rem;
+    text-align: center;
+}
+
+/* Commentary text area */
+.stTextArea textarea {
+    font-family: 'Courier New', Courier, monospace;
+    padding: 1rem;
+}
+
+/* Chat message styling */
+.chat-message {
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+}
+
+.user-message {
+    background-color: var(--bs-primary-bg-subtle);
+    margin-left: 2rem;
+}
+
+.bot-message {
+    background-color: var(--bs-secondary-bg-subtle);
+    margin-right: 2rem;
+}
+
+/* Button styling */
+.stButton button {
+    width: 100%;
+    margin: 0.5rem 0;
+}
+
+/* Spinner styling */
+.stSpinner {
+    text-align: center;
+    padding: 1rem;
+}
