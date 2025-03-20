@@ -371,3 +371,51 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+#############
+def process_chat_input():
+    """Process the chat input and update chat history"""
+    if st.session_state.chatbot_input and not st.session_state.processing_query:
+        query = st.session_state.chatbot_input
+        st.session_state.chatbot_input = ""  # Clear the input
+        st.session_state.processing_query = True
+        st.session_state.chatbot_messages.append(f"You: {query}")
+        
+        # Process the query immediately instead of using rerun
+        with st.spinner("Getting response..."):
+            response = process_chatbot_query(st.session_state.engine, query)
+            st.session_state.chatbot_messages.append(f"Bot: {response}")
+            st.session_state.processing_query = False
+
+def render_chatbot():
+    """Render the chatbot in a popover"""
+    message_container = st.container(height=400)
+    
+    with message_container:
+        if not st.session_state.chatbot_messages:
+            st.info("Type a message to start chatting")
+        else:
+            for message in st.session_state.chatbot_messages:
+                is_user = message.startswith("You: ")
+                message_content = message[4:] if is_user else message[5:]
+                
+                st.markdown(
+                    f"""
+                    <div class="chat-message {'chat-message-user' if is_user else 'chat-message-bot'}">
+                        <div class="chat-bubble {'chat-bubble-user' if is_user else 'chat-bubble-bot'}">
+                            {message_content}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+    
+    # Chat input with on_change to handle Enter key press
+    st.text_input(
+        "Message",
+        placeholder="Type a message and press Enter...",
+        label_visibility="collapsed",
+        key="chatbot_input",
+        on_change=process_chat_input
+    )
