@@ -12,8 +12,6 @@ from llm.reson_code import get_reason_code
 from llm.commentary import get_commentary, modify_commentary
 from llm.chatbot import process_chatbot_query
 
-# DO WITH API THING
-# todo : updating the config file with list of contributing columns
 
 # page Configuration
 st.set_page_config(layout="wide")
