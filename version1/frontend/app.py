@@ -1,25 +1,26 @@
 import os
+import sys
 from pathlib import Path
 import streamlit as st
 import yaml
+import sys
+import requests
 
-from utils.helper import read_config, get_file_config_by_path, convert_to_int, format_top_contributors, names_to_index
-from utils.ppt_export import generate_ppt
-from database.get_summary_table import *
-from database.database_process import create_oracle_engine
-from database.get_top_contributors import get_top_attributes_by_difference
-from llm.reson_code import get_reason_code
-from llm.commentary import get_commentary, modify_commentary
-from llm.chatbot import process_chatbot_query
-
+# Add parent directory to path to import api client
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from api.client import APIClient
 
 # page Configuration
 st.set_page_config(layout="wide")
 
+# Initialize API client
+API_ENDPOINT = os.getenv("API_ENDPOINT", "http://localhost:5000")
+api_client = APIClient(API_ENDPOINT)
+
 # loading the style
 def load_custom_css():
     """Load custom CSS styles"""
-    with open("styles/style_new.css") as f:
+    with open("frontend/styles/style_new.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     
     # Add custom CSS for fixed chat button
@@ -61,19 +62,9 @@ def load_custom_css():
         unsafe_allow_html=True
     )
 
-# setting up the DB engine
-EXCEL_DATA_PATH = "data"
+# Load data files
+EXCEL_DATA_PATH = "frontend/data"
 config_file = "config/config.yaml"
-excel_data_dir = "data"
-config = read_config(config_file)
-
-# caching the resources to avoid loading multiple times
-@st.cache_resource
-def load_engine(config):
-    # database configuration
-    db_config = config.get('database', {})
-    engine = create_oracle_engine(db_config)
-    return engine
 
 # initialize Session State
 def init_session_state():
@@ -92,30 +83,30 @@ def initialize_file_data(file_name):
     """Initialize data for a file if it doesn't exist"""
     if file_name not in st.session_state.file_data:
         with st.spinner("Loading file data..."):
-            st.session_state.file_config = get_file_config_by_path(config, file_name)
+            # Get file config via API
+            file_config = api_client.get_file_config(file_name)
+            st.session_state.file_config = file_config
             st.session_state.file_name = file_name
-            # summary table (one time)
-            summary_func_name = st.session_state.file_config.get('summary_table_function')
-            summary_func = globals()[summary_func_name]
-            df = summary_func(st.session_state.engine)
-            df = df.map(convert_to_int)
-            df = df.drop(columns=['Y/Y %', 'Q/Q %'])
             
-            st.session_state.contributing_columns = st.session_state.file_config['contributing_columns']
-            st.session_state.top_n = st.session_state.file_config['top_n']
+            # Get summary table via API
+            df = api_client.get_summary_table(file_name)
             
-            # reason code (one time)
-            initial_selected_cells = get_reason_code(df, file_name)
+            st.session_state.contributing_columns = file_config['contributing_columns']
+            st.session_state.top_n = file_config['top_n']
             
-            # getting the contributing factors
-            top_contributors = get_top_attributes_by_difference(st.session_state.engine,
-                                                             initial_selected_cells,
-                                                             st.session_state.file_config['table_name'],
-                                                             st.session_state.contributing_columns,
-                                                             st.session_state.top_n)
-            top_contributors_formatted = format_top_contributors(top_contributors)
+            # Get reason code via API
+            initial_selected_cells = api_client.get_reason_code(file_name, df)
             
-            commentary = get_commentary(top_contributors_formatted, file_name)
+            # Get top contributors via API
+            top_contributors_formatted = api_client.get_top_contributors(
+                file_name, 
+                initial_selected_cells,
+                file_config['contributing_columns'],
+                file_config['top_n']
+            )
+            
+            # Get commentary via API
+            commentary = api_client.get_commentary(file_name, top_contributors_formatted)
             
             st.session_state.file_data[file_name] = {
                 'name': file_name,
@@ -127,12 +118,13 @@ def initialize_file_data(file_name):
     return st.session_state.file_data[file_name]
 
 def modify_config():
-    """Updates the config file"""
+    """Updates the config file via API"""
     with st.spinner("Updating configuration..."):
-        with open(config_file, "w") as file:
-            config['excel_files'][st.session_state.file_name]['contributing_columns'] = list(st.session_state.contributing_columns)
-            config['excel_files'][st.session_state.file_name]['top_n'] = st.session_state.top_n
-            yaml.dump(config, file)
+        api_client.update_config(
+            st.session_state.file_name,
+            list(st.session_state.contributing_columns),
+            st.session_state.top_n
+        )
 
 def render_selection_controls(edited_df, file_data):
     """Render the selection controls section"""
@@ -246,7 +238,10 @@ def render_chatbot():
                                      if msg.startswith("You: ")), None)
             if last_user_message:
                 query = last_user_message[4:]
-                response = process_chatbot_query(st.session_state.engine, query, st.session_state.config['table_name'])
+                response = api_client.process_chatbot_query(
+                    query, 
+                    st.session_state.file_config['table_name']
+                )
                 st.session_state.chatbot_messages.append(f"Bot: {response}")
             
             st.session_state.processing_query = False
@@ -276,16 +271,19 @@ def reset_selections(file_data):
 def update_commentary(file_data):
     """Update commentary based on current selections"""
     with st.spinner("Updating commentary..."):
-        # getting the contributing factors
-        top_contributors = get_top_attributes_by_difference(st.session_state.engine,
-                                                         file_data['selected_cells'],
-                                                         st.session_state.file_config['table_name'],
-                                                         st.session_state.contributing_columns,
-                                                         st.session_state.top_n)
+        # Getting top contributors via API
+        top_contributors_formatted = api_client.get_top_contributors(
+            st.session_state.file_name,
+            file_data['selected_cells'],
+            st.session_state.contributing_columns,
+            st.session_state.top_n
+        )
         
-        top_contributors_formatted = format_top_contributors(top_contributors)
-        # getting the commentary
-        file_data['commentary'] = get_commentary(top_contributors_formatted, st.session_state.file_name)
+        # Getting commentary via API
+        file_data['commentary'] = api_client.get_commentary(
+            st.session_state.file_name, 
+            top_contributors_formatted
+        )
 
 # Main Application
 def main():
@@ -293,15 +291,11 @@ def main():
     
     st.markdown("<center><h1 class='main-header'>Close Pack Commentary 📝</h1></center>", unsafe_allow_html=True)
     
-    # setting the engine
-    with st.spinner("Loading engine..."):
-        st.session_state.engine = load_engine(config)
-    
     init_session_state()
     
     # Sidebar
     with st.sidebar:
-        excel_files = [f for f in os.listdir(EXCEL_DATA_PATH) if f.endswith('.xlsx')]
+        excel_files = api_client.get_available_files()
         file_list = [Path(f).stem for f in excel_files]
         selected_file = st.selectbox("Select Slide", file_list)
         if st.button("Ok"):
@@ -351,11 +345,11 @@ def main():
             if st.button("Update Commentary", key=f"update_commentary_btn_{st.session_state.selected_file}"):
                 if user_comment:
                     with st.spinner("Modifying commentary..."):
-                        file_data['commentary'] = modify_commentary(
+                        file_data['commentary'] = api_client.modify_commentary(
+                            st.session_state.file_name,
                             user_comment,
                             file_data['commentary'],
                             file_data['selected_cells'],
-                            st.session_state.selected_file,
                             st.session_state.contributing_columns,
                             st.session_state.top_n
                         )

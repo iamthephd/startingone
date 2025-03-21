@@ -1,0 +1,18 @@
+- ROOT
+  - frontend/
+    - app.py            # Main Streamlit application
+    - styles/
+      - style_new.css   # CSS styles
+    - Dockerfile        # Frontend container configuration
+  - backend/
+    - server.py         # Flask API server
+    - database/         # Database modules
+    - llm/              # LLM modules
+    - utils/            # Utility functions
+    - Dockerfile        # Backend container configuration
+  - api/
+    - client.py         # API client for frontend to communicate with backend
+  - config/
+    - config.yaml       # Configuration file
+  - data/               # Excel files and data
+  - docker-compose.yml  # Docker Compose configuration
