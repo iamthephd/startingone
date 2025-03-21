@@ -57,6 +57,10 @@ class APIClient:
     
     def get_top_contributors(self, file_name, selected_cells, contributing_columns, top_n):
         """Get top contributors for the selected cells"""
+        # Ensure selected_cells is not None and is iterable
+        if selected_cells is None:
+            selected_cells = []
+            
         payload = {
             'selected_cells': selected_cells,
             'contributing_columns': contributing_columns,
@@ -84,6 +88,16 @@ class APIClient:
     def modify_commentary(self, file_name, user_comment, current_commentary, selected_cells, 
                          contributing_columns, top_n):
         """Modify commentary based on user input"""
+        # Ensure all parameters are properly defined and not None
+        if selected_cells is None:
+            selected_cells = []
+        if contributing_columns is None:
+            contributing_columns = []
+        if top_n is None:
+            top_n = 5  # Default value
+        if current_commentary is None:
+            current_commentary = ""
+            
         payload = {
             'user_comment': user_comment,
             'current_commentary': current_commentary,

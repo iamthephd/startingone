@@ -157,10 +157,14 @@ def get_top_contributors_api(file_name):
     """Get top contributors for selected cells"""
     try:
         data = request.json
-        selected_cells = data.get('selected_cells')
-        contributing_columns = data.get('contributing_columns')
-        top_n = data.get('top_n')
+        selected_cells = data.get('selected_cells', [])
+        contributing_columns = data.get('contributing_columns', [])
+        top_n = data.get('top_n', 5)  # Default to 5 if not provided
         
+        # Validate inputs
+        if not selected_cells:
+            return jsonify({'error': 'No cells selected'}), 400
+            
         file_config = get_cached_file_config(file_name)
         table_name = file_config.get('table_name')
         
@@ -185,8 +189,11 @@ def get_commentary_api(file_name):
     """Get commentary for top contributors"""
     try:
         data = request.json
-        top_contributors = data.get('top_contributors')
+        top_contributors = data.get('top_contributors', [])
         
+        if not top_contributors:
+            return jsonify({'commentary': 'No contributors to analyze.'}), 200
+            
         commentary = get_commentary(top_contributors, file_name)
         return jsonify({'commentary': commentary})
     except Exception as e:
@@ -198,12 +205,16 @@ def modify_commentary_api(file_name):
     """Modify commentary based on user input"""
     try:
         data = request.json
-        user_comment = data.get('user_comment')
-        current_commentary = data.get('current_commentary')
-        selected_cells = data.get('selected_cells')
-        contributing_columns = data.get('contributing_columns')
-        top_n = data.get('top_n')
+        user_comment = data.get('user_comment', '')
+        current_commentary = data.get('current_commentary', '')
+        selected_cells = data.get('selected_cells', [])
+        contributing_columns = data.get('contributing_columns', [])
+        top_n = data.get('top_n', 5)  # Default to 5
         
+        # Validate inputs
+        if not user_comment:
+            return jsonify({'error': 'User comment is required'}), 400
+            
         updated_commentary = modify_commentary(
             user_comment,
             current_commentary,
@@ -223,9 +234,14 @@ def chatbot_api():
     """Process chatbot query"""
     try:
         data = request.json
-        query = data.get('query')
-        table_name = data.get('table_name')
+        query = data.get('query', '')
+        table_name = data.get('table_name', '')
         
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        if not table_name:
+            return jsonify({'error': 'Table name is required'}), 400
+            
         engine = get_engine()
         
         response = process_chatbot_query(engine, query, table_name)
@@ -243,11 +259,17 @@ def update_config_api():
         contributing_columns = data.get('contributing_columns')
         top_n = data.get('top_n')
         
+        if not file_name:
+            return jsonify({'error': 'File name is required'}), 400
+            
         # Read current config
         with open(CONFIG_FILE, 'r') as file:
             current_config = yaml.safe_load(file)
         
         # Update config
+        if file_name not in current_config.get('excel_files', {}):
+            current_config.setdefault('excel_files', {})[file_name] = {}
+            
         current_config['excel_files'][file_name]['contributing_columns'] = contributing_columns
         current_config['excel_files'][file_name]['top_n'] = top_n
         
