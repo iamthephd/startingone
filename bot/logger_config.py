@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 
 def setup_logger():
     """Configure logging for the application."""
@@ -9,7 +10,12 @@ def setup_logger():
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Updated formatter to include filename and line number
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    
     console_handler.setFormatter(formatter)
     
     # File handler
@@ -22,4 +28,5 @@ def setup_logger():
     
     return logger
 
+# Initialize the logger
 logger = setup_logger()

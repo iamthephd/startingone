@@ -246,7 +246,7 @@ def render_chatbot():
                                      if msg.startswith("You: ")), None)
             if last_user_message:
                 query = last_user_message[4:]
-                response = process_chatbot_query(st.session_state.engine, query)
+                response = process_chatbot_query(st.session_state.engine, query, st.session_state.config['table_name'])
                 st.session_state.chatbot_messages.append(f"Bot: {response}")
             
             st.session_state.processing_query = False
