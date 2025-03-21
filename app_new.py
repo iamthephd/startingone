@@ -46,50 +46,57 @@ def init_session_state():
         st.session_state.commentary = ""
     if 'chatbot_messages' not in st.session_state:
         st.session_state.chatbot_messages = []
+    if 'processing_query' not in st.session_state:
+        st.session_state.processing_query = False
+    # Add chatbot_open state to track if chatbot is opened
+    if 'chatbot_open' not in st.session_state:
+        st.session_state.chatbot_open = False
 
 def initialize_file_data(file_name):
     """Initialize data for a file if it doesn't exist"""
     if file_name not in st.session_state.file_data:
-        st.session_state.file_config = get_file_config_by_path(config, file_name)
-        st.session_state.file_name = file_name
-        # summary table (one time)
-        summary_func_name = st.session_state.file_config.get('summary_table_function')
-        summary_func = globals()[summary_func_name]
-        df = summary_func(st.session_state.engine)
-        df = df.map(convert_to_int)
-        df = df.drop(columns=['Y/Y %', 'Q/Q %'])
-        
-        st.session_state.contributing_columns = st.session_state.file_config['contributing_columns']
-        st.session_state.top_n = st.session_state.file_config['top_n']
-        
-        # reason code (one time)
-        initial_selected_cells = get_reason_code(df, file_name)
-        
-        # getting the contributing factors
-        top_contributors = get_top_attributes_by_difference(st.session_state.engine,
-                                                         initial_selected_cells,
-                                                         st.session_state.file_config['table_name'],
-                                                         st.session_state.contributing_columns,
-                                                         st.session_state.top_n)
-        top_contributors_formatted = format_top_contributors(top_contributors)
-        
-        commentary = get_commentary(top_contributors_formatted, file_name)
-        
-        st.session_state.file_data[file_name] = {
-            'name': file_name,
-            'df': df,
-            'selected_cells': initial_selected_cells.copy(),
-            'initial_selected_cells': initial_selected_cells, # Store initial selection
-            'commentary': commentary
-        }
+        with st.spinner("Loading file data..."):
+            st.session_state.file_config = get_file_config_by_path(config, file_name)
+            st.session_state.file_name = file_name
+            # summary table (one time)
+            summary_func_name = st.session_state.file_config.get('summary_table_function')
+            summary_func = globals()[summary_func_name]
+            df = summary_func(st.session_state.engine)
+            df = df.map(convert_to_int)
+            df = df.drop(columns=['Y/Y %', 'Q/Q %'])
+            
+            st.session_state.contributing_columns = st.session_state.file_config['contributing_columns']
+            st.session_state.top_n = st.session_state.file_config['top_n']
+            
+            # reason code (one time)
+            initial_selected_cells = get_reason_code(df, file_name)
+            
+            # getting the contributing factors
+            top_contributors = get_top_attributes_by_difference(st.session_state.engine,
+                                                             initial_selected_cells,
+                                                             st.session_state.file_config['table_name'],
+                                                             st.session_state.contributing_columns,
+                                                             st.session_state.top_n)
+            top_contributors_formatted = format_top_contributors(top_contributors)
+            
+            commentary = get_commentary(top_contributors_formatted, file_name)
+            
+            st.session_state.file_data[file_name] = {
+                'name': file_name,
+                'df': df,
+                'selected_cells': initial_selected_cells.copy(),
+                'initial_selected_cells': initial_selected_cells, # Store initial selection
+                'commentary': commentary
+            }
     return st.session_state.file_data[file_name]
 
 def modify_config():
     """Updates the config file"""
-    with open(config_file, "w") as file:
-        config['excel_files'][st.session_state.file_name]['contributing_columns'] = list(st.session_state.contributing_columns)
-        config['excel_files'][st.session_state.file_name]['top_n'] = st.session_state.top_n
-        yaml.dump(config, file)
+    with st.spinner("Updating configuration..."):
+        with open(config_file, "w") as file:
+            config['excel_files'][st.session_state.file_name]['contributing_columns'] = list(st.session_state.contributing_columns)
+            config['excel_files'][st.session_state.file_name]['top_n'] = st.session_state.top_n
+            yaml.dump(config, file)
 
 def render_selection_controls(edited_df, file_data):
     """Render the selection controls section"""
@@ -105,8 +112,9 @@ def render_selection_controls(edited_df, file_data):
             if new_selection in file_data['selected_cells']:
                 st.warning(f"Cell ({row_index}, {column}, {value}) is already selected!")
             else:
-                file_data['selected_cells'].append(new_selection)
-                st.rerun()
+                with st.spinner("Adding selection..."):
+                    file_data['selected_cells'].append(new_selection)
+                    st.rerun()
     
     with st.expander("Additional Settings", expanded=False):
         contributing_cols = st.multiselect(
@@ -153,76 +161,126 @@ def render_selected_cells(file_data):
             
             # Update selected cells if selections change
             if len(selected_indices) != len(file_data['selected_cells']):
-                file_data['selected_cells'] = [file_data['selected_cells'][i] for i in selected_indices]
-                st.rerun()
+                with st.spinner("Updating selections..."):
+                    file_data['selected_cells'] = [file_data['selected_cells'][i] for i in selected_indices]
+                    st.rerun()
     
     # reset button
     st.button("Reset", key="reset", on_click=lambda: reset_selections(file_data), use_container_width=True)
 
+def toggle_chatbot():
+    """Toggle the chatbot open/closed state"""
+    st.session_state.chatbot_open = not st.session_state.chatbot_open
+
+def process_chat_input():
+    """Process the chat input and update chat history"""
+    if st.session_state.chatbot_input and not st.session_state.processing_query:
+        query = st.session_state.chatbot_input
+        st.session_state.chatbot_input = ""  # Clear the input
+        st.session_state.processing_query = True
+        st.session_state.chatbot_messages.append(f"You: {query}")
+        
+        # Keep chatbot open
+        st.session_state.chatbot_open = True
+        
+        # Rerun to show the user message first
+        st.rerun()
+
 def render_chatbot():
-    """Render the chatbot section"""
-    st.markdown("<center><div style='background-color:lightgreen;border-radius:5px; padding:1px'><p class='section-header'>ChatBot 🤖</p></div></center>", unsafe_allow_html=True)
-    main_container = st.container(border=True)
-    
-    with main_container:
-        message_container = st.container(height=400)
-        with message_container:
-            if not st.session_state.chatbot_messages:
-                st.info("Type a message to start chatting")
-            else:
-                for message in st.session_state.chatbot_messages:
-                    is_user = message.startswith("You: ")
-                    message_content = message[4:] if is_user else message[5:]
-                    align = "flex-end" if is_user else "flex-start"
-                    bg_color = "#DCF8C6" if is_user else "white"
-                    
-                    st.markdown(
-                        f"""
-                        <div style="display: flex; justify-content: {align}; margin-bottom: 10px;">
-                            <div style="background-color: {bg_color}; border-radius: 10px; padding: 8px 12px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
-                                {message_content}
+    """Render the chatbot in a container that maintains state"""
+    # Create a button to toggle chatbot visibility
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col3:
+        if st.button("💬 Chat Assistant", use_container_width=True, on_click=toggle_chatbot):
+            pass
+
+    # Show chatbot if it's open
+    if st.session_state.chatbot_open:
+        with st.container(border=True):
+            st.markdown("### Chat Assistant")
+            
+            message_container = st.container(height=400)
+            
+            with message_container:
+                if not st.session_state.chatbot_messages:
+                    st.info("Type a message to start chatting")
+                else:
+                    for message in st.session_state.chatbot_messages:
+                        is_user = message.startswith("You: ")
+                        message_content = message[4:] if is_user else message[5:]
+                        
+                        st.markdown(
+                            f"""
+                            <div class="chat-message {'chat-message-user' if is_user else 'chat-message-bot'}">
+                                <div class="chat-bubble {'chat-bubble-user' if is_user else 'chat-bubble-bot'}">
+                                    {message_content}
+                                </div>
                             </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-        
-        chatbot_input = st.text_input(
-            "Message",
-            placeholder="Type a message...",
-            label_visibility="collapsed",
-            key="chatbot_input"
-        )
-        
-        if st.button("Send", use_container_width=True) and chatbot_input:
-            st.session_state.chatbot_messages.append(f"You: {chatbot_input}")
-            response = process_chatbot_query(st.session_state.engine, chatbot_input)
-            st.session_state.chatbot_messages.append(f"Bot: {response}")
-            st.rerun()
+                            """,
+                            unsafe_allow_html=True
+                        )
+            
+            # Process the current query if needed
+            if st.session_state.processing_query:
+                with st.spinner("Getting response..."):
+                    # Get the last user query
+                    last_user_message = next((msg for msg in reversed(st.session_state.chatbot_messages) 
+                                              if msg.startswith("You: ")), None)
+                    if last_user_message:
+                        query = last_user_message[4:]
+                        # Implement a simple response for testing
+                        try:
+                            response = process_chatbot_query(st.session_state.engine, query, st.session_state.config['table_name'])
+                        except Exception as e:
+                            # Fallback for testing
+                            response = f"I received your message: '{query}'. How can I help you further?"
+                        
+                        st.session_state.chatbot_messages.append(f"Bot: {response}")
+                    
+                    st.session_state.processing_query = False
+                    
+                    # Keep chatbot open after processing
+                    st.session_state.chatbot_open = True
+                    st.rerun()
+            
+            # Chat input with on_change to handle Enter key press
+            st.text_input(
+                "Message",
+                placeholder="Type a message and press Enter...",
+                label_visibility="collapsed",
+                key="chatbot_input",
+                on_change=process_chat_input
+            )
+            
+            if st.button("Close Chat", use_container_width=True):
+                st.session_state.chatbot_open = False
+                st.rerun()
 
 def clear_selections(file_data):
     """Clear all selected cells"""
-    file_data['selected_cells'] = []
-    st.rerun()
+    with st.spinner("Clearing selections..."):
+        file_data['selected_cells'] = []
+        st.rerun()
 
 def reset_selections(file_data):
     """Reset to initial selected cells"""
-    file_data['selected_cells'] = file_data['initial_selected_cells'].copy()
-    st.rerun()
+    with st.spinner("Resetting selections..."):
+        file_data['selected_cells'] = file_data['initial_selected_cells'].copy()
+        st.rerun()
 
 def update_commentary(file_data):
     """Update commentary based on current selections"""
-    
-    # getting the contributing factors
-    top_contributors = get_top_attributes_by_difference(st.session_state.engine,
-                                                     file_data['selected_cells'],
-                                                     st.session_state.file_config['table_name'],
-                                                     st.session_state.contributing_columns,
-                                                     st.session_state.top_n)
-    
-    top_contributors_formatted = format_top_contributors(top_contributors)
-    # getting the commentary
-    file_data['commentary'] = get_commentary(top_contributors_formatted, st.session_state.file_name)
+    with st.spinner("Updating commentary..."):
+        # getting the contributing factors
+        top_contributors = get_top_attributes_by_difference(st.session_state.engine,
+                                                         file_data['selected_cells'],
+                                                         st.session_state.file_config['table_name'],
+                                                         st.session_state.contributing_columns,
+                                                         st.session_state.top_n)
+        
+        top_contributors_formatted = format_top_contributors(top_contributors)
+        # getting the commentary
+        file_data['commentary'] = get_commentary(top_contributors_formatted, st.session_state.file_name)
 
 # Main Application
 def main():
@@ -231,7 +289,8 @@ def main():
     st.markdown("<center><h1 class='main-header'>Close Pack Commentary 📝</h1></center>", unsafe_allow_html=True)
     
     # setting the engine
-    st.session_state.engine = load_engine(config)
+    with st.spinner("Loading engine..."):
+        st.session_state.engine = load_engine(config)
     
     init_session_state()
     
@@ -247,7 +306,7 @@ def main():
     # Main Content
     if st.session_state.selected_file:
         file_data = st.session_state.file_data[st.session_state.selected_file]
-        col_a, col_b, col_c = st.columns([3, 2, 1])
+        col_a, col_b = st.columns([3, 2])  # Changed to two columns
         
         # Column A - Data Overview and Cell Selection
         with col_a:
@@ -259,51 +318,32 @@ def main():
             st.markdown("<center><div style='background-color:skyblue;border-radius:5px; padding:1px'><p class='section-header'>Manual Selection 👇</p></div></center>", unsafe_allow_html=True)
             
             left_col, right_col = st.columns(2)
+            
             with left_col:
                 render_selection_controls(edited_df, file_data)
+            
             with right_col:
                 render_selected_cells(file_data)
-            
-            if st.button("Modify Commentary", use_container_width=True):
-                update_commentary(file_data)
-                st.rerun()
+                
+            # add a button to update commentary
+            st.button("Generate Commentary", key="update_commentary", on_click=lambda: update_commentary(file_data), use_container_width=True)
         
-        # Column B - Commentary
+        # Column B - Commentary and actions
         with col_b:
-            st.markdown("<center><div style='background-color:lightpink;border-radius:5px; padding:1px'><p class='section-header'>Commentary 📝</p></div></center>", unsafe_allow_html=True)
+            # Commentary Section
+            st.markdown("<center><div style='background-color:skyblue;border-radius:5px; padding:1px'><p class='section-header'>Commentary 📝</p></div></center>", unsafe_allow_html=True)
             
-            if file_data['commentary']:
-                st.text_area(
-                    "Commentary",
-                    value=file_data['commentary'],
-                    height=400,
-                    key=f"commentary_display_{st.session_state.selected_file}",
-                    label_visibility="collapsed"
-                )
-            else:
-                st.info("Click 'Modify Commentary' to generate analysis")
+            # Text Area for Commentary
+            st.text_area("", value=file_data.get('commentary', ''), height=300, key=f"commentary_{st.session_state.selected_file}")
             
-            user_comment = st.text_input("Type to modify analysis", key=f"user_comment_input_{st.session_state.selected_file}")
-            if st.button("Update Commentary", key=f"update_commentary_btn_{st.session_state.selected_file}"):
-                if user_comment:
-                    file_data['commentary'] = modify_commentary(
-                        user_comment,
-                        file_data['commentary'],
-                        file_data['selected_cells'],
-                        st.session_state.selected_file,
-                        st.session_state.contributing_columns,
-                        st.session_state.top_n
-                    )
-                    st.rerun()
-                else:
-                    st.error("Please provide comments to update the commentary")
-        
-        # Column C - Chatbot
-        with col_c:
-            with st.expander("ChatBot", expanded=False):
-                render_chatbot()
-    else:
-        st.info("Please select a file from the sidebar and click 'Ok' to begin analysis.")
+            st.markdown("<center><div style='background-color:skyblue;border-radius:5px; padding:1px'><p class='section-header'>Actions 🧰</p></div></center>", unsafe_allow_html=True)
+            
+            # Actions
+            st.button("Export to PowerPoint", key="export_ppt", on_click=lambda: generate_ppt(file_data, st.session_state.file_config), use_container_width=True)
+            
+        # Render chatbot at the bottom outside the columns
+        st.markdown("---")
+        render_chatbot()
 
 if __name__ == "__main__":
     main()
