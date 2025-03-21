@@ -100,7 +100,7 @@ def render_selection_controls(edited_df, file_data):
     st.text("")
     st.markdown("<h5 style='text-align: center;'>Selection Controls</h5>", unsafe_allow_html=True)
     row_index = st.selectbox("Select Row", edited_df.index.tolist())
-    column = st.selectbox("Select Column", ["Y/Y %", "Q/Q %"])
+    column = st.selectbox("Select Column", ["Y/Y $", "Q/Q $"])
     
     if st.button("+ Add Selection"):
         if row_index is not None and column is not None:
@@ -272,7 +272,7 @@ def main():
     # Main Content
     if st.session_state.selected_file:
         file_data = st.session_state.file_data[st.session_state.selected_file]
-        col_a, col_b = st.columns([3, 2])  # Changed to two columns
+        col_a, col_b = st.columns([2, 2])  # Changed to two columns
         
         # Column A - Data Overview and Cell Selection
         with col_a:
