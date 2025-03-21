@@ -22,45 +22,6 @@ def load_custom_css():
     """Load custom CSS styles"""
     with open("frontend/styles/style_new.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    
-    # Add custom CSS for fixed chat button
-    st.markdown(
-        """
-        <style>
-        .stPopover {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-        }
-        
-        /* Style the chat messages */
-        .chat-message {
-            display: flex;
-            margin-bottom: 10px;
-        }
-        .chat-message-user {
-            justify-content: flex-end;
-        }
-        .chat-message-bot {
-            justify-content: flex-start;
-        }
-        .chat-bubble {
-            border-radius: 10px;
-            padding: 8px 12px;
-            max-width: 80%;
-            box-shadow: 0 1px 1px rgba(0,0,0,0.1);
-        }
-        .chat-bubble-user {
-            background-color: #DCF8C6;
-        }
-        .chat-bubble-bot {
-            background-color: white;
-        }
-        </style>
-        """, 
-        unsafe_allow_html=True
-    )
 
 # Load data files
 EXCEL_DATA_PATH = "frontend/data"
