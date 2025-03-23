@@ -1,0 +1,26 @@
+{
+  "financial_data_2023.csv": {
+    "contributing_columns": [
+      "Q1",
+      "Q3"
+    ],
+    "top_n": 3
+  },
+  "revenue_report_q2.csv": {
+    "contributing_columns": [
+      "Q1",
+      "Q3",
+      "Q4"
+    ],
+    "top_n": 3
+  },
+  "expense_analysis.csv": {
+    "contributing_columns": [
+      "Q1",
+      "Q2",
+      "Q3",
+      "Q4"
+    ],
+    "top_n": 3
+  }
+}

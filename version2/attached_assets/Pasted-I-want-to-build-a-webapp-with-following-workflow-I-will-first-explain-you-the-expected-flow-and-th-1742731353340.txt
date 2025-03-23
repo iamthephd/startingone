@@ -1,0 +1,26 @@
+I want to build a webapp with following workflow.
+I will first explain you the expected flow and then the functions which I have.
+
+step 0: First the user selects the file name and following happens (automatically)
+	step 1: the details of the file like how many rows are there, what the average amount, etc. are extract by get_details function
+	step 2 : summary table is created using get_summary_table function based on the file name
+	step 2.5 : based on the summary table (pandas df), the cells are selected using get_reason_code function
+	step 3 : based on these selected cells, and some default values (from config file based on selected file name) commentary is generated using get_commentary
+	
+2) Now user will interact to change the commentary in two ways:
+	2.1) By typing in the chatbox just and pressing enter, which will call modify_commentary function which updates the commentary
+	2.2) Manually selecting the options from the drop down (Settings to update the commentary) and selects/deselects various cells from the table which will change the "selected cells" and then pressing button "modify commentary" which will call update_commentary function which updates the commentary
+
+3) There is chatbot at bottom right, which use can chat with when clicked on its icon. It will call chat_bot_reply function which provides the output
+
+
+I have following functions:
+1) get_summary_table : input is file name (str) and provides pandas df
+2) get_reason_code : input is df, and file name and output is selected cell in format of list of tuple eg. [(row name, col name, value), ...]
+3) get_top_attributes: input is engine (oracle db), selected cells, contibuting columns [list] and top_n it outputs, Dict(Tuple(str, str, int), Dict(str, int)
+4) get_commentary: input is the top contributors (output of get_top_attributes) and output is commentary:str
+5) modify_commentary: input is user query and current commentary and output is modified text commentary. This is when user types in chatbox to modify the commentary. Note: this is totally different that the chatbot
+6) update_commentary: It updates the commentary based on the manually selected settings like cells, contibuting columns [list] and top_n
+
+I want the js, html and Flask part, you don't have to code these python functions. Make the code modular. The UI should look like the one attached image.
+
