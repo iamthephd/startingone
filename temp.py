@@ -1,10 +1,10 @@
 import concurrent.futures
-from typing import Dict, Tuple, List, Any, Callable
-import re
+from typing import Dict, Tuple, List
+from langchain.prompts import PromptTemplate
 
 class CommentaryGenerator:
     """
-    Generates financial commentary from structured data using an LLM.
+    Generates financial commentary from structured data using a simple LLM.
     
     The class processes financial data in the format:
     {
@@ -15,14 +15,26 @@ class CommentaryGenerator:
     And generates commentary in sections based on the Type (Y/Y or Q/Q).
     """
     
-    def __init__(self, llm_invoke_function: Callable):
+    def __init__(self, llm):
         """
-        Initialize the generator with an LLM invoke function.
+        Initialize the generator with an LLM that has an invoke method.
         
         Args:
-            llm_invoke_function: A function that takes a prompt string and returns an LLM response.
+            llm: A language model instance with an invoke method
         """
-        self.llm_invoke = llm_invoke_function
+        self.llm = llm
+        
+        # Define the prompt template
+        self.prompt_template = PromptTemplate(
+            input_variables=["reasons"],
+            template="""
+            Create a professional financial commentary based on these contributing factors:
+            {reasons}
+            
+            Write a clear and concise sentence explaining these factors and their contributions.
+            Focus on how they affected the financial outcome without repeating the overall value.
+            """
+        )
         
     def generate_reason_commentary(self, reasons: Dict[str, int]) -> str:
         """
@@ -34,22 +46,17 @@ class CommentaryGenerator:
         Returns:
             A sentence explaining the reasons
         """
-        # Create the prompt for the LLM
-        prompt = f"""
-        Create a concise, professional financial statement based on these contributing factors:
-        {', '.join([f"{reason} (${contribution} million)" for reason, contribution in reasons.items()])}
+        # Format the reasons for the prompt
+        reasons_text = ', '.join([f"{reason} (${contribution} million)" for reason, contribution in reasons.items()])
         
-        Start with 'This is mainly due to' and focus on the key drivers. Format the response as a single paragraph.
-        Don't repeat the overall impact or value, just explain the reasons clearly and professionally.
-        """
+        # Generate the prompt using the template
+        prompt = self.prompt_template.format(reasons=reasons_text)
         
-        # Get commentary from LLM
-        commentary = self.llm_invoke(prompt).strip()
+        # Invoke the LLM and get the content
+        output = self.llm.invoke(prompt)
         
-        # Remove any prefixes the LLM might have added to ensure we get a clean start
-        commentary = re.sub(r'^.*?[Mm]ainly due to', 'This is mainly due to', commentary)
-        
-        return commentary
+        # Extract the content from the output
+        return output.content
     
     def process_data(self, data: Dict[Tuple[str, str, int], Dict[str, int]]) -> str:
         """
@@ -121,7 +128,7 @@ class CommentaryGenerator:
                 sign = "+" if value > 0 else ""
                 formatted_value = f"{sign}${value} million" if value != 0 else "$0 million"
                 
-                # Format the final output
+                # Format the final output - hardcoding the left part
                 formatted_commentary = f"{category} ({formatted_value}): {commentary}"
                 results.append(formatted_commentary)
         
@@ -130,10 +137,16 @@ class CommentaryGenerator:
 
 # Example usage
 def example():
-    # Mock LLM invoke function for demonstration
-    def mock_llm_invoke(prompt):
-        # In a real scenario, this would call your actual LLM
-        return "This is mainly due to Reason1 contributing negatively (-$30 million) and Reason2 also having a negative impact (-$20 million)."
+    # Mock LLM class for demonstration
+    class MockLLM:
+        def invoke(self, prompt):
+            # Mock response object with content attribute
+            class MockResponse:
+                def __init__(self, text):
+                    self.content = text
+            
+            # In a real scenario, this would call the actual LLM API
+            return MockResponse("Decrease in product demand (-$30 million) and increased competition (-$20 million).")
     
     # Sample data
     sample_data = {
@@ -142,8 +155,9 @@ def example():
         ("Expenses", "Q/Q $", -15): {"Cost Reduction": -20, "New Initiative": 5}
     }
     
-    # Initialize the generator with the LLM function
-    generator = CommentaryGenerator(mock_llm_invoke)
+    # Initialize the generator with the LLM
+    llm = MockLLM()
+    generator = CommentaryGenerator(llm)
     
     # Generate and print the commentary
     commentary = generator.process_data(sample_data)
@@ -156,21 +170,13 @@ def example():
     }
     print("\nY/Y Only Example:")
     print(generator.process_data(yy_only_data))
-    
-    # Example with only Q/Q data
-    qq_only_data = {
-        ("Expenses", "Q/Q $", -15): {"Cost Reduction": -20, "New Initiative": 5}
-    }
-    print("\nQ/Q Only Example:")
-    print(generator.process_data(qq_only_data))
 
 # How to use with your actual LLM
 """
-# Replace this with your actual LLM implementation
-def my_llm_invoke(prompt: str) -> str:
-    # Call your LLM API here
-    response = my_llm.invoke(prompt)
-    return response
+from langchain.llms import YourLLMImplementation
+
+# Initialize your LLM
+llm = YourLLMImplementation()
 
 # Your actual data
 financial_data = {
@@ -179,7 +185,7 @@ financial_data = {
 }
 
 # Initialize and run
-generator = CommentaryGenerator(my_llm_invoke)
+generator = CommentaryGenerator(llm)
 commentary = generator.process_data(financial_data)
 print(commentary)
 """
