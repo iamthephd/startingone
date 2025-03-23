@@ -1,126 +1,188 @@
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from typing import List, Tuple, Dict, Any
+import concurrent.futures
+from typing import Dict, Tuple, List, Any, Callable
+import re
 
-class InsightsManager:
-    def __init__(self, llm, dataframe):
-        self.llm = llm
-        self.df = dataframe
-        self.current_insights = ""
-        
-        # Chain for modifying existing insights
-        self.modifier_prompt = PromptTemplate(
-            input_variables=["current_insights", "modification_request"],
-            template="Current insights:\n{current_insights}\n\nUser request: {modification_request}\n\nModified insights:"
-        )
-        self.modifier_chain = LLMChain(llm=llm, prompt=self.modifier_prompt)
-        
-        # Chain for parsing user requests
-        self.parser_prompt = PromptTemplate(
-            input_variables=["user_message"],
-            template="""Analyze the following user message and classify what the user wants to do:
-User message: {user_message}
-
-If the user wants to add new insights for specific row and column names, extract:
-1. Row names mentioned
-2. Column names mentioned
-3. The number of top contributors (default to 3 if not specified)
-
-Output in this format:
-REQUEST_TYPE: [ADD_INSIGHTS or MODIFY_INSIGHTS]
-ROW_NAMES: [comma-separated list of row names]
-COLUMN_NAMES: [comma-separated list of column names]
-TOP_N: [number]
-
-Example 1:
-User: "Add insights for Sales department and Q3 revenue for top 5 contributors"
-Response:
-REQUEST_TYPE: ADD_INSIGHTS
-ROW_NAMES: Sales
-COLUMN_NAMES: Q3 revenue
-TOP_N: 5
-
-Example 2:
-User: "Change 'declining revenue' to 'decreasing income'"
-Response:
-REQUEST_TYPE: MODIFY_INSIGHTS
-"""
-        )
-        self.parser_chain = LLMChain(llm=llm, prompt=self.parser_prompt)
+class CommentaryGenerator:
+    """
+    Generates financial commentary from structured data using an LLM.
     
-    def get_commentary(self, row_col_tuples: List[Tuple[str, str, float]], top_n: int) -> str:
-        # This is your existing function
-        # Assuming it's implemented elsewhere
-        pass
+    The class processes financial data in the format:
+    {
+        ("Category", "Type", value): {"Reason1": value1, "Reason2": value2, ...},
+        ...
+    }
     
-    def process_message(self, user_message: str) -> str:
-        # Parse the user request
-        parser_response = self.parser_chain.invoke({"user_message": user_message})
+    And generates commentary in sections based on the Type (Y/Y or Q/Q).
+    """
+    
+    def __init__(self, llm_invoke_function: Callable):
+        """
+        Initialize the generator with an LLM invoke function.
         
-        # Extract the parsed information
-        parsed_info = self._extract_parsed_info(parser_response['text'])
+        Args:
+            llm_invoke_function: A function that takes a prompt string and returns an LLM response.
+        """
+        self.llm_invoke = llm_invoke_function
         
-        if parsed_info['request_type'] == 'ADD_INSIGHTS':
-            # Handle request to add insights
-            row_names = parsed_info['row_names']
-            col_names = parsed_info['column_names']
-            top_n = parsed_info['top_n']
+    def generate_reason_commentary(self, reasons: Dict[str, int]) -> str:
+        """
+        Generate commentary for the reasons and their contributions.
+        
+        Args:
+            reasons: Dict of reasons and their contributions
+        
+        Returns:
+            A sentence explaining the reasons
+        """
+        # Create the prompt for the LLM
+        prompt = f"""
+        Create a concise, professional financial statement based on these contributing factors:
+        {', '.join([f"{reason} (${contribution} million)" for reason, contribution in reasons.items()])}
+        
+        Start with 'This is mainly due to' and focus on the key drivers. Format the response as a single paragraph.
+        Don't repeat the overall impact or value, just explain the reasons clearly and professionally.
+        """
+        
+        # Get commentary from LLM
+        commentary = self.llm_invoke(prompt).strip()
+        
+        # Remove any prefixes the LLM might have added to ensure we get a clean start
+        commentary = re.sub(r'^.*?[Mm]ainly due to', 'This is mainly due to', commentary)
+        
+        return commentary
+    
+    def process_data(self, data: Dict[Tuple[str, str, int], Dict[str, int]]) -> str:
+        """
+        Process the entire financial dataset and generate a complete commentary.
+        
+        Args:
+            data: The financial data dictionary
+        
+        Returns:
+            Complete formatted commentary with Y/Y and Q/Q sections
+        """
+        # Separate data into Y/Y and Q/Q categories
+        yy_data = {key: value for key, value in data.items() if "Y/Y" in key[1]}
+        qq_data = {key: value for key, value in data.items() if "Q/Q" in key[1]}
+        
+        result = []
+        
+        # Process Y/Y data if present
+        if yy_data:
+            result.append("Year on Year Commentary (Y/Y):")
+            result.append(self._process_section(yy_data))
+        
+        # Process Q/Q data if present
+        if qq_data:
+            result.append("\nQuarter on Quarter Commentary (Q/Q):")
+            result.append(self._process_section(qq_data))
+        
+        # Handle case where there might be only Y/Y or only Q/Q data
+        if not result:
+            return "No Y/Y or Q/Q data found in the input."
+        
+        return "\n".join(result)
+    
+    def _process_section(self, section_data: Dict[Tuple[str, str, int], Dict[str, int]]) -> str:
+        """
+        Process a section of data (Y/Y or Q/Q) in parallel.
+        
+        Args:
+            section_data: The section data to process
             
-            # Create row-col tuples with values from the dataframe
-            tuples = []
-            for row in row_names:
-                for col in col_names:
-                    if row in self.df.index and col in self.df.columns:
-                        value = self.df.loc[row, col]
-                        tuples.append((row, col, value))
+        Returns:
+            Formatted commentary for the section
+        """
+        # Sort the data by absolute value (descending)
+        sorted_data = sorted(
+            section_data.items(), 
+            key=lambda item: abs(item[0][2]), 
+            reverse=True
+        )
+        
+        results = []
+        
+        # Use ThreadPoolExecutor for parallel processing
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Create a future -> original data mapping
+            futures_to_data = {}
             
-            # Get new insights
-            new_insights = self.get_commentary(tuples, top_n)
+            for (category, metric_type, value), reasons in sorted_data:
+                # Submit each task to the executor
+                future = executor.submit(self.generate_reason_commentary, reasons)
+                futures_to_data[future] = (category, metric_type, value)
             
-            # Append to current insights
-            if self.current_insights:
-                self.current_insights += "\n\n" + new_insights
-            else:
-                self.current_insights = new_insights
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures_to_data):
+                category, metric_type, value = futures_to_data[future]
+                commentary = future.result()
                 
-            return f"Added insights for {', '.join(row_names)} and {', '.join(col_names)}."
-            
-        elif parsed_info['request_type'] == 'MODIFY_INSIGHTS':
-            # Handle request to modify insights
-            modified_insights = self.modifier_chain.invoke({
-                "current_insights": self.current_insights,
-                "modification_request": user_message
-            })
-            
-            self.current_insights = modified_insights['text']
-            return "Insights updated successfully."
-            
-        else:
-            return "I'm not sure what you're asking. You can request to add insights for specific rows and columns, or modify existing insights."
-    
-    def _extract_parsed_info(self, parser_output: str) -> Dict[str, Any]:
-        """Extract structured information from the parser output"""
-        lines = parser_output.strip().split('\n')
-        result = {
-            'request_type': 'UNKNOWN',
-            'row_names': [],
-            'column_names': [],
-            'top_n': 3  # Default value
-        }
+                # Format the value with sign and "million"
+                sign = "+" if value > 0 else ""
+                formatted_value = f"{sign}${value} million" if value != 0 else "$0 million"
+                
+                # Format the final output
+                formatted_commentary = f"{category} ({formatted_value}): {commentary}"
+                results.append(formatted_commentary)
         
-        for line in lines:
-            if line.startswith('REQUEST_TYPE:'):
-                result['request_type'] = line.replace('REQUEST_TYPE:', '').strip()
-            elif line.startswith('ROW_NAMES:'):
-                row_names = line.replace('ROW_NAMES:', '').strip()
-                result['row_names'] = [name.strip() for name in row_names.split(',') if name.strip()]
-            elif line.startswith('COLUMN_NAMES:'):
-                col_names = line.replace('COLUMN_NAMES:', '').strip()
-                result['column_names'] = [name.strip() for name in col_names.split(',') if name.strip()]
-            elif line.startswith('TOP_N:'):
-                try:
-                    result['top_n'] = int(line.replace('TOP_N:', '').strip())
-                except ValueError:
-                    pass  # Keep default value
-                    
-        return result
+        return "\n".join(results)
+
+
+# Example usage
+def example():
+    # Mock LLM invoke function for demonstration
+    def mock_llm_invoke(prompt):
+        # In a real scenario, this would call your actual LLM
+        return "This is mainly due to Reason1 contributing negatively (-$30 million) and Reason2 also having a negative impact (-$20 million)."
+    
+    # Sample data
+    sample_data = {
+        ("Sales", "Y/Y $", -50): {"Reason1": -30, "Reason2": -20},
+        ("Revenue", "Y/Y $", 25): {"Reason3": 15, "Reason4": 10},
+        ("Expenses", "Q/Q $", -15): {"Cost Reduction": -20, "New Initiative": 5}
+    }
+    
+    # Initialize the generator with the LLM function
+    generator = CommentaryGenerator(mock_llm_invoke)
+    
+    # Generate and print the commentary
+    commentary = generator.process_data(sample_data)
+    print(commentary)
+    
+    # Example with only Y/Y data
+    yy_only_data = {
+        ("Sales", "Y/Y $", -50): {"Reason1": -30, "Reason2": -20},
+        ("Revenue", "Y/Y $", 25): {"Reason3": 15, "Reason4": 10},
+    }
+    print("\nY/Y Only Example:")
+    print(generator.process_data(yy_only_data))
+    
+    # Example with only Q/Q data
+    qq_only_data = {
+        ("Expenses", "Q/Q $", -15): {"Cost Reduction": -20, "New Initiative": 5}
+    }
+    print("\nQ/Q Only Example:")
+    print(generator.process_data(qq_only_data))
+
+# How to use with your actual LLM
+"""
+# Replace this with your actual LLM implementation
+def my_llm_invoke(prompt: str) -> str:
+    # Call your LLM API here
+    response = my_llm.invoke(prompt)
+    return response
+
+# Your actual data
+financial_data = {
+    ("Sales", "Y/Y $", -50): {"Reason1": -30, "Reason2": -20},
+    # Add more data here
+}
+
+# Initialize and run
+generator = CommentaryGenerator(my_llm_invoke)
+commentary = generator.process_data(financial_data)
+print(commentary)
+"""
+
+if __name__ == "__main__":
+    example()
