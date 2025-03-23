@@ -104,10 +104,38 @@
     opacity: 0.8;
 }
 
+/* Table container with fixed height */
+.table-container {
+    height: 400px; /* Fixed height for the table container */
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.table-responsive {
+    max-height: 100%;
+    overflow-y: auto;
+    overflow-x: auto;
+    width: 100%;
+    display: block;
+    -webkit-overflow-scrolling: touch; /* For smooth scrolling on iOS */
+}
+
 /* Table styling */
 #summaryTable {
     border-radius: 0.5rem;
     overflow: hidden;
+    width: 100%;
+    margin-bottom: 0; /* Remove bottom margin as container has margin */
+    /* This makes first column stick to the left */
+    position: relative;
+}
+
+/* Stick first column to show row names while scrolling horizontally */
+#summaryTable thead th:first-child,
+#summaryTable tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
 }
 
 /* Table column header styling */
@@ -116,6 +144,14 @@
     color: var(--bs-dark);
     font-weight: 600;
     border-bottom: none;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* Make sure header corner has highest z-index when both sticky positions apply */
+#summaryTable thead th:first-child {
+    z-index: 3;
 }
 
 /* Table first column styling (row names) */
@@ -123,6 +159,15 @@
     font-weight: bold;
     background-color: rgba(var(--bs-primary-rgb), 0.3);
     color: var(--bs-dark);
+}
+
+/* Make sure the background color of sticky elements shows properly */
+#summaryTable tbody tr:nth-of-type(odd) td:first-child {
+    background-color: rgba(var(--bs-primary-rgb), 0.3);
+}
+
+#summaryTable tbody tr:nth-of-type(even) td:first-child {
+    background-color: rgba(var(--bs-primary-rgb), 0.3);
 }
 
 /* Table striping enhancement */
@@ -198,6 +243,26 @@
 .form-label {
     font-size: 0.95rem; /* You can adjust this value to make it smaller or larger */
     font-weight: 600;
+}
+
+/* Custom scrollbar for better UX */
+.table-responsive::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(var(--bs-primary-rgb), 0.5);
+    border-radius: 10px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--bs-primary-rgb), 0.7);
 }
 
 /* Responsive fixes */
