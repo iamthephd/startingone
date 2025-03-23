@@ -92,7 +92,7 @@ class CommentaryGenerator:
     
     def _process_section(self, section_data: Dict[Tuple[str, str, int], Dict[str, int]]) -> str:
         """
-        Process a section of data (Y/Y or Q/Q) in parallel.
+        Process a section of data (Y/Y or Q/Q) while preserving the sorted order.
         
         Args:
             section_data: The section data to process
@@ -107,32 +107,61 @@ class CommentaryGenerator:
             reverse=True
         )
         
-        results = []
+        # Approach 1: Track the original order with futures
+        result_dict = {}
         
-        # Use ThreadPoolExecutor for parallel processing
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Create a future -> original data mapping
-            futures_to_data = {}
+            # Map futures to the original indices
+            future_to_idx = {}
             
-            for (category, metric_type, value), reasons in sorted_data:
-                # Submit each task to the executor
+            for idx, ((category, metric_type, value), reasons) in enumerate(sorted_data):
                 future = executor.submit(self.generate_reason_commentary, reasons)
-                futures_to_data[future] = (category, metric_type, value)
+                future_to_idx[future] = (idx, category, metric_type, value)
             
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(futures_to_data):
-                category, metric_type, value = futures_to_data[future]
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx, category, metric_type, value = future_to_idx[future]
                 commentary = future.result()
                 
-                # Format the value with sign and "million"
+                # Format the value
                 sign = "+" if value > 0 else ""
                 formatted_value = f"{sign}${value} million" if value != 0 else "$0 million"
                 
-                # Format the final output - hardcoding the left part
-                formatted_commentary = f"{category} ({formatted_value}): {commentary}"
-                results.append(formatted_commentary)
+                # Store the formatted commentary with its original index
+                result_dict[idx] = f"{category} ({formatted_value}): {commentary}"
         
-        return "\n".join(results)
+        # Return the results in the original sorted order
+        return "\n".join([result_dict[i] for i in range(len(sorted_data))])
+        
+        # Approach 2 (alternative): Sort results afterwards
+        """
+        results = []
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures_to_data = {}
+            
+            for (category, metric_type, value), reasons in sorted_data:
+                future = executor.submit(self.generate_reason_commentary, reasons)
+                futures_to_data[future] = (category, metric_type, value, abs(value))
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures_to_data):
+                category, metric_type, value, abs_value = futures_to_data[future]
+                commentary = future.result()
+                
+                # Format the value
+                sign = "+" if value > 0 else ""
+                formatted_value = f"{sign}${value} million" if value != 0 else "$0 million"
+                
+                # Store the result along with its absolute value for sorting
+                results.append((abs_value, f"{category} ({formatted_value}): {commentary}"))
+        
+        # Sort the results by absolute value (descending)
+        results.sort(reverse=True)
+        
+        # Return just the commentary strings
+        return "\n".join([result[1] for result in results])
+        """
 
 
 # Example usage
