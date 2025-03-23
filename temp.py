@@ -2,7 +2,8 @@ table_name = "<YOUR_TABLE_NAME>"
 
 query = f"""
 SELECT 
-    COUNT(*) AS num_samples,
+    (SELECT COUNT(*) 
+     FROM {table_name}) AS num_samples,
     (SELECT COUNT(*) 
      FROM all_tab_columns 
      WHERE table_name = UPPER('{table_name}')) AS num_columns,
