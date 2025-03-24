@@ -164,28 +164,86 @@
 .table-container {
     max-width: 100%;
     overflow-y: auto;
-    overflow-x: hidden;
 }
 
 #summaryTable {
     width: 100%;
-    table-layout: fixed;
     font-size: 0.85rem; /* Reduced font size */
 }
 
-#summaryTable th, 
-#summaryTable td {
-    padding: 0.4rem 0.5rem; /* Reduced padding */
+/* Make the first column (row names) wider and prevent text truncation */
+#summaryTable th:first-child,
+#summaryTable td:first-child {
+    min-width: 120px; /* Adjust as needed */
+    max-width: 200px; /* Adjust as needed */
+    white-space: normal; /* Allow text to wrap */
+    font-weight: 500; /* Make row names slightly bolder */
+}
+
+/* Make all other columns narrower */
+#summaryTable th:not(:first-child),
+#summaryTable td:not(:first-child) {
+    max-width: 80px; /* Limit column width */
+    padding: 0.4rem 0.3rem; /* Reduced padding */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* Add horizontal scrolling only when screen gets very small */
-@media (max-width: 576px) {
-    .table-responsive {
-        overflow-x: auto;
-    }
+/* Add a tooltip effect on hover for truncated data cells */
+#summaryTable td:not(:first-child):hover {
+    position: relative;
 }
+
+#summaryTable td:not(:first-child):hover::after {
+    content: attr(data-full-text);
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 1000;
+    background: #f8f9fa;
+    padding: 3px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    display: none; /* Only show if JavaScript sets data-full-text attribute */
+}
+
+/* Add this script to your page to enable tooltips */
 </style>
+
+<script>
+// This script should be added at the end of your page or in your existing JavaScript file
+document.addEventListener("DOMContentLoaded", function() {
+    // Find all data cells (not row names) and set the data-full-text attribute
+    const dataCells = document.querySelectorAll("#summaryTable td:not(:first-child)");
+    
+    dataCells.forEach(cell => {
+        // Store the full text content for tooltip display
+        cell.setAttribute("data-full-text", cell.textContent);
+    });
+    
+    // Function to resize columns based on content
+    function adjustColumnWidths() {
+        const headerCells = document.querySelectorAll("#summaryTable th:not(:first-child)");
+        const totalColumns = headerCells.length;
+        
+        if (totalColumns > 0) {
+            // Set a reasonable maximum width per column
+            const maxColWidth = Math.floor(80 / totalColumns);
+            
+            headerCells.forEach(th => {
+                th.style.maxWidth = maxColWidth + '%';
+            });
+        }
+    }
+    
+    // Call the function when the table is loaded/updated
+    // Note: You'll need to call this function after your table is populated with data
+    // if you're loading data dynamically.
+    setTimeout(adjustColumnWidths, 500);
+});
+</script>
 {% endblock %}
