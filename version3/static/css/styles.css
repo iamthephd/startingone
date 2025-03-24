@@ -156,6 +156,7 @@
     background-color: var(--primary-light);
     color: var(--text-dark);
     font-weight: 600;
+    white-space: nowrap;
     border-bottom: none;
     position: sticky;
     top: 0;
