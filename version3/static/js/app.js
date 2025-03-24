@@ -9,6 +9,20 @@ $(document).ready(function() {
     // Initialize the application
     initApp();
     
+    // Set up global AJAX error handling
+    $.ajaxSetup({
+        error: function(xhr, status, error) {
+            console.error('AJAX Error:', {xhr, status, error});
+            
+            // Display user-friendly error message
+            const errorMsg = xhr.responseJSON && xhr.responseJSON.error
+                ? xhr.responseJSON.error
+                : 'An unexpected error occurred. Please try again.';
+                
+            showAlert(`Error: ${errorMsg}`, 'danger');
+        }
+    });
+    
     function initApp() {
         console.log("Application initializing...");
         // Load available files
@@ -29,8 +43,14 @@ $(document).ready(function() {
     
     function fetchFiles() {
         fetch('/api/files')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(files => {
+                console.log("Files fetched successfully:", files);
                 populateFileSelect(files);
             })
             .catch(error => {
@@ -112,7 +132,8 @@ $(document).ready(function() {
         // Prepare data for the API call
         const data = {
             contributing_columns: contributingColumns,
-            top_n: topN
+            top_n: topN,
+            timestamp: new Date().getTime() // Add timestamp to prevent caching
         };
         
         // Call the API to save settings
@@ -128,12 +149,6 @@ $(document).ready(function() {
                 // Close the accordion
                 $('#settingsCollapse').collapse('hide');
             },
-            error: function(xhr) {
-                // Show error message
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'Failed to save settings';
-                console.error('Error saving settings:', errorMsg);
-                showAlert(`Error: ${errorMsg}`, 'danger');
-            },
             complete: function() {
                 // Reset button state
                 button.html(originalText);
@@ -146,20 +161,37 @@ $(document).ready(function() {
         const filename = $('#fileSelect').val();
         if (!filename) return;
         
-        // Reset selected cells
+        console.log(`File selected: ${filename}`);
+        
+        // Reset all state
         selectedCells = [];
         originalSelectedCells = [];
+        contributingColumns = [];
+        topN = 3;
+        commentarySections = [];
+        
+        // Clear all UI elements
+        $('#summaryTable thead').empty();
+        $('#summaryTable tbody').empty();
+        $('#commentaryText').html('');
+        $('#contributingColumnsSelect').empty();
         
         // Show loading state
         $('#fileDetails').html('<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>');
+        $('#analysisCard').hide();
         
-        // Fetch file details and analysis
+        // Fetch file details and analysis with cache busting
         $.ajax({
             url: '/api/file_details',
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ filename }),
+            data: JSON.stringify({ 
+                filename,
+                timestamp: new Date().getTime() // Add timestamp to prevent caching
+            }),
             success: function(data) {
+                console.log("File details received:", data);
+                
                 if (data.error) {
                     throw new Error(data.error);
                 }
@@ -171,18 +203,20 @@ $(document).ready(function() {
                 displaySummaryTable(data.table);
                 
                 // Set selected cells
-                selectedCells = data.selected_cells;
-                originalSelectedCells = [...data.selected_cells]; // Store original cells for reset
+                selectedCells = Array.isArray(data.selected_cells) ? [...data.selected_cells] : [];
+                originalSelectedCells = Array.isArray(data.selected_cells) ? [...data.selected_cells] : []; // Store original cells for reset
                 
                 // Highlight selected cells
-                highlightSelectedCells();
+                setTimeout(() => {
+                    highlightSelectedCells();
+                }, 200);
                 
                 // Set contributing columns
-                contributingColumns = data.contributing_columns;
+                contributingColumns = Array.isArray(data.contributing_columns) ? [...data.contributing_columns] : [];
                 populateContributingColumns(data.table.columns);
                 
                 // Set top N
-                topN = data.top_n;
+                topN = data.top_n || 3;
                 $('#topNSelect').val(topN);
                 
                 // Display commentary
@@ -192,7 +226,7 @@ $(document).ready(function() {
                 $('#analysisCard').fadeIn();
             },
             error: function(xhr, status, error) {
-                console.error('Error fetching file details:', error);
+                console.error('Error fetching file details:', {xhr, status, error});
                 const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : error;
                 $('#fileDetails').html(`
                     <div class="alert alert-danger">
@@ -204,27 +238,34 @@ $(document).ready(function() {
     }
     
     function displayFileDetails(details) {
+        console.log("Displaying file details:", details);
+        
+        if (!details) {
+            $('#fileDetails').html('<div class="alert alert-warning">No file details available</div>');
+            return;
+        }
+        
         let detailsHtml = `
             <div class="d-flex flex-wrap align-items-center justify-content-between w-100">
                 <div class="badge bg-primary p-2 flex-grow-1 mx-1">
                     <div class="text-small">Total Rows</div>
-                    <div class="fs-5">${details.rows}</div>
+                    <div class="fs-5">${details.rows || 'N/A'}</div>
                 </div>
                 <div class="badge bg-secondary p-2 flex-grow-1 mx-1">
                     <div class="text-small">Total Columns</div>
-                    <div class="fs-5">${details.columns}</div>
+                    <div class="fs-5">${details.columns || 'N/A'}</div>
                 </div>
                 <div class="badge bg-success p-2 flex-grow-1 mx-1">
                     <div class="text-small">Average Amount</div>
-                    <div class="fs-5">${details.avg_amount.toFixed(2)}</div>
+                    <div class="fs-5">${details.avg_amount !== undefined ? details.avg_amount.toFixed(2) : 'N/A'}</div>
                 </div>
                 <div class="badge bg-info p-2 flex-grow-1 mx-1">
                     <div class="text-small">Min Amount</div>
-                    <div class="fs-5">${details.min_amount.toFixed(2)}</div>
+                    <div class="fs-5">${details.min_amount !== undefined ? details.min_amount.toFixed(2) : 'N/A'}</div>
                 </div>
                 <div class="badge bg-warning p-2 flex-grow-1 mx-1">
                     <div class="text-small">Max Amount</div>
-                    <div class="fs-5">${details.max_amount.toFixed(2)}</div>
+                    <div class="fs-5">${details.max_amount !== undefined ? details.max_amount.toFixed(2) : 'N/A'}</div>
                 </div>
             </div>
         `;
@@ -233,6 +274,22 @@ $(document).ready(function() {
     }
     
     function displaySummaryTable(tableData) {
+        console.log("Displaying summary table:", tableData);
+        
+        if (!tableData || !tableData.data || !tableData.columns || tableData.data.length === 0) {
+            $('#summaryTable').html('<div class="alert alert-warning">No table data available</div>');
+            return;
+        }
+        
+        // Destroy DataTable if it exists
+        if ($.fn.DataTable.isDataTable('#summaryTable')) {
+            $('#summaryTable').DataTable().destroy();
+        }
+        
+        // Clear HTML completely before setting new content
+        $('#summaryTable thead').empty();
+        $('#summaryTable tbody').empty();
+        
         // Create table headers
         let headerHtml = '<tr><th></th>';
         tableData.columns.slice(1).forEach(column => {
@@ -245,7 +302,9 @@ $(document).ready(function() {
         tableData.data.forEach(row => {
             bodyHtml += `<tr><td class="fw-bold">${row[tableData.columns[0]]}</td>`;
             tableData.columns.slice(1).forEach(column => {
-                bodyHtml += `<td data-row="${row[tableData.columns[0]]}" data-col="${column}" data-value="${row[column]}">${row[column]}</td>`;
+                // Make sure we're handling undefined/null values
+                const value = row[column] !== undefined && row[column] !== null ? row[column] : '';
+                bodyHtml += `<td data-row="${row[tableData.columns[0]]}" data-col="${column}" data-value="${value}">${value}</td>`;
             });
             bodyHtml += '</tr>';
         });
@@ -254,20 +313,19 @@ $(document).ready(function() {
         $('#summaryTable thead').html(headerHtml);
         $('#summaryTable tbody').html(bodyHtml);
         
-        // Initialize DataTable
-        if ($.fn.DataTable.isDataTable('#summaryTable')) {
-            $('#summaryTable').DataTable().destroy();
-        }
-        
-        $('#summaryTable').DataTable({
-            paging: false,
-            searching: false,
-            info: false,
-            ordering: false
-        });
-        
-        // Add click event listeners to cells
-        $('#summaryTable tbody td:not(:first-child)').on('click', toggleCellSelection);
+        // Initialize DataTable with a slight delay to ensure DOM is updated
+        setTimeout(() => {
+            $('#summaryTable').DataTable({
+                paging: false,
+                searching: false,
+                info: false,
+                ordering: false,
+                destroy: true // Ensure it can be reinitialized
+            });
+            
+            // Add click event listeners to cells
+            $('#summaryTable tbody td:not(:first-child)').on('click', toggleCellSelection);
+        }, 100);
     }
     
     function toggleCellSelection(event) {
@@ -275,6 +333,11 @@ $(document).ready(function() {
         const row = $cell.data('row');
         const col = $cell.data('col');
         const value = parseFloat($cell.data('value'));
+        
+        if (isNaN(row) || isNaN(value) || !col) {
+            console.warn('Invalid cell data:', {row, col, value});
+            return;
+        }
         
         // Check if cell is already selected
         const cellIndex = selectedCells.findIndex(c => 
@@ -290,22 +353,42 @@ $(document).ready(function() {
             selectedCells.splice(cellIndex, 1);
             $cell.removeClass('selected-cell');
         }
+        
+        console.log('Selected cells:', selectedCells);
     }
     
     function highlightSelectedCells() {
+        console.log('Highlighting selected cells:', selectedCells);
+        
         // Remove all selections first
         $('#summaryTable tbody td:not(:first-child)').removeClass('selected-cell');
         
         // Add selection to the cells in selectedCells
-        selectedCells.forEach(cellInfo => {
-            const [row, col] = cellInfo;
-            $(`#summaryTable tbody td[data-row="${row}"][data-col="${col}"]`).addClass('selected-cell');
-        });
+        if (Array.isArray(selectedCells)) {
+            selectedCells.forEach(cellInfo => {
+                if (Array.isArray(cellInfo) && cellInfo.length >= 2) {
+                    const [row, col] = cellInfo;
+                    const $cell = $(`#summaryTable tbody td[data-row="${row}"][data-col="${col}"]`);
+                    if ($cell.length > 0) {
+                        $cell.addClass('selected-cell');
+                    } else {
+                        console.warn(`Cell not found in DOM: row=${row}, col=${col}`);
+                    }
+                }
+            });
+        }
     }
     
     function populateContributingColumns(columns) {
+        console.log('Populating contributing columns:', columns);
+        
         const $select = $('#contributingColumnsSelect');
         $select.empty();
+        
+        if (!columns || columns.length <= 1) {
+            console.warn('No columns to populate');
+            return;
+        }
         
         // Skip the first column (row names)
         columns.slice(1).forEach(column => {
@@ -320,6 +403,8 @@ $(document).ready(function() {
     }
     
     function displayCommentary(commentary) {
+        console.log('Displaying commentary');
+        
         // First, clear commentarySections array
         commentarySections = [];
         
@@ -333,34 +418,38 @@ $(document).ready(function() {
         let formattedCommentary = commentary;
         
         // Process each selected cell and mark it in the commentary text
-        selectedCells.forEach((cell, idx) => {
-            const [row, col, value] = cell;
-            
-            // Create a unique ID for this cell reference
-            const spanId = `cell-ref-${idx}`;
-            
-            // Look for "Cell [row], [col]" pattern in text
-            let cellRefPattern = new RegExp(`(Cell\\s+${row}\\s*,\\s*${col})`, 'gi');
-            
-            // Also look for exact matches of the cell reference without "Cell" prefix
-            let simpleCellRefPattern = new RegExp(`\\b(${row}\\s*,\\s*${col})\\b`, 'g');
-            
-            // Replace all instances with highlighted spans
-            formattedCommentary = formattedCommentary.replace(cellRefPattern, 
-                `<span id="${spanId}" class="cell-reference" data-row="${row}" data-col="${col}">$1</span>`);
+        if (Array.isArray(selectedCells)) {
+            selectedCells.forEach((cell, idx) => {
+                if (!Array.isArray(cell) || cell.length < 3) return;
                 
-            // Replace simple cell references too
-            formattedCommentary = formattedCommentary.replace(simpleCellRefPattern, 
-                `<span id="${spanId}-simple" class="cell-reference" data-row="${row}" data-col="${col}">$1</span>`);
-            
-            // Store the mapping for hover behaviors
-            commentarySections.push({
-                id: spanId,
-                row: row,
-                col: col,
-                value: value
+                const [row, col, value] = cell;
+                
+                // Create a unique ID for this cell reference
+                const spanId = `cell-ref-${idx}`;
+                
+                // Look for "Cell [row], [col]" pattern in text
+                let cellRefPattern = new RegExp(`(Cell\\s+${row}\\s*,\\s*${col})`, 'gi');
+                
+                // Also look for exact matches of the cell reference without "Cell" prefix
+                let simpleCellRefPattern = new RegExp(`\\b(${row}\\s*,\\s*${col})\\b`, 'g');
+                
+                // Replace all instances with highlighted spans
+                formattedCommentary = formattedCommentary.replace(cellRefPattern, 
+                    `<span id="${spanId}" class="cell-reference" data-row="${row}" data-col="${col}">$1</span>`);
+                    
+                // Replace simple cell references too
+                formattedCommentary = formattedCommentary.replace(simpleCellRefPattern, 
+                    `<span id="${spanId}-simple" class="cell-reference" data-row="${row}" data-col="${col}">$1</span>`);
+                
+                // Store the mapping for hover behaviors
+                commentarySections.push({
+                    id: spanId,
+                    row: row,
+                    col: col,
+                    value: value
+                });
             });
-        });
+        }
         
         // Set the formatted commentary
         $('#commentaryText').html(formattedCommentary);
@@ -378,7 +467,9 @@ $(document).ready(function() {
         $('.cell-reference').on({
             mouseenter: function() {
                 const spanId = $(this).attr('id');
-                const section = commentarySections.find(s => s.id === spanId);
+                if (!spanId) return;
+                
+                const section = commentarySections.find(s => s && s.id === spanId);
                 
                 if (section) {
                     // Highlight corresponding cell in table
@@ -387,7 +478,7 @@ $(document).ready(function() {
                 } else {
                     // Check if this is a simple cell reference (with -simple suffix)
                     const baseId = spanId.replace('-simple', '');
-                    const baseSection = commentarySections.find(s => s.id === baseId);
+                    const baseSection = commentarySections.find(s => s && s.id === baseId);
                     
                     if (baseSection) {
                         // Highlight corresponding cell in table
@@ -415,7 +506,7 @@ $(document).ready(function() {
                 if (row && col) {
                     // Find sections that reference this cell
                     const relatedSections = commentarySections.filter(
-                        s => s.row.toString() === row.toString() && s.col.toString() === col.toString()
+                        s => s && s.row.toString() === row.toString() && s.col.toString() === col.toString()
                     );
                     
                     // Highlight the cell
@@ -438,6 +529,8 @@ $(document).ready(function() {
     }
     
     function handleManualCommentaryUpdate() {
+        console.log('Updating commentary manually');
+        
         // Show loading state
         const $button = $('#updateCommentaryBtn');
         const originalText = $button.text();
@@ -448,7 +541,8 @@ $(document).ready(function() {
         const data = {
             selected_cells: selectedCells,
             contributing_columns: contributingColumns,
-            top_n: topN
+            top_n: topN,
+            timestamp: new Date().getTime() // Add timestamp to prevent caching
         };
         
         // Call the API to update commentary
@@ -468,11 +562,6 @@ $(document).ready(function() {
                 // Show success message
                 showAlert('Commentary updated successfully.', 'success');
             },
-            error: function(xhr, status, error) {
-                console.error('Error updating commentary:', error);
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : error;
-                showAlert(`Error updating commentary: ${errorMsg}`, 'danger');
-            },
             complete: function() {
                 // Reset button state
                 $button.html(originalText);
@@ -487,6 +576,8 @@ $(document).ready(function() {
         
         if (!query) return;
         
+        console.log('Modifying commentary with query:', query);
+        
         // Show loading state
         $input.prop('disabled', true);
         const $button = $('#sendCommentaryBtn');
@@ -498,7 +589,10 @@ $(document).ready(function() {
             url: '/api/modify_commentary',
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ query }),
+            data: JSON.stringify({ 
+                query,
+                timestamp: new Date().getTime() // Add timestamp to prevent caching
+            }),
             success: function(data) {
                 if (data.error) {
                     throw new Error(data.error);
@@ -512,11 +606,6 @@ $(document).ready(function() {
                 
                 // Show success message
                 showAlert('Commentary modified successfully.', 'success');
-            },
-            error: function(xhr, status, error) {
-                console.error('Error modifying commentary:', error);
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : error;
-                showAlert(`Error modifying commentary: ${errorMsg}`, 'danger');
             },
             complete: function() {
                 // Reset input and button state
@@ -566,6 +655,8 @@ $(document).ready(function() {
             $button.prop('disabled', false);
             return;
         }
+        
+        console.log('Exporting to PPT:', filename);
         
         // Create a virtual canvas to capture the table as an image
         const tableHtml = $('#summaryTable').parent().html();

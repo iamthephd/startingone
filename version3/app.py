@@ -62,8 +62,8 @@ def file_details():
     data = request.json
     filename = data.get('filename')
 
-    session['config_file'] = get_file_config_by_path(config, filename)
-    session['table_name'] = session['config_file']['table_name']
+    session['file_config'] = get_file_config_by_path(config, filename)
+    session['table_name'] = session['file_config']['table_name']
     
     if not filename:
         return jsonify({"error": "No filename provided"}), 400
