@@ -1,0 +1,48 @@
+/* Custom CSS styles */
+
+/* Icon circles for cards */
+.icon-circle {
+    height: 40px;
+    width: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Chart container margins */
+.chart-container {
+    margin: 0 auto;
+}
+
+/* Card hover effects */
+.card {
+    transition: transform 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+/* Financial ratio bars styling */
+.financial-ratio .progress {
+    box-shadow: none;
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Custom colors for positive and negative values */
+.text-positive {
+    color: var(--bs-success);
+}
+
+.text-negative {
+    color: var(--bs-danger);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .chart-container {
+        height: 200px !important;
+    }
+}

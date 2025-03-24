@@ -1,103 +1,64 @@
-/* Main styles for the application - Professional Light Theme */
+/* Main styles for the professional financial dashboard */
 
-/* Variables for consistent color scheme */
+/* Color variables for consistent theming */
 :root {
-    --primary-color: #0e6ba8;
-    --primary-light: #00a8e8;
-    --primary-dark: #003459;
-    --neutral-light: #f8f9fa;
-    --neutral-accent: #e9ecef;
-    --text-primary: #212529;
-    --text-secondary: #6c757d;
+    --primary-color: #3b82f6;
+    --primary-light: rgba(59, 130, 246, 0.1);
+    --primary-medium: rgba(59, 130, 246, 0.2);
+    --text-dark: #1e293b;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
+    --highlight-color: rgba(76, 175, 80, 0.6); /* Light green for highlighting */
+    --highlight-light: rgba(76, 175, 80, 0.2); /* Lighter green for the badge */
+    --background-light: #f8fafc;
+    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-/* Navbar styling with logo */
+/* Navbar styling */
 .navbar-logo {
     height: 40px;
     width: auto;
-    border-radius: 5px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s ease;
-}
-
-.navbar-logo:hover {
-    transform: scale(1.05);
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 .navbar-title {
-    font-size: 1.4rem;
+    font-size: 1.3rem;
     font-weight: 600;
-    letter-spacing: 0.5px;
-    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
+    letter-spacing: 0.4px;
 }
 
-/* Card styling with rounded corners and professional look */
+/* Card styling with elegant shadows */
 .card {
-    transition: all 0.3s ease;
-    border-radius: 0.75rem !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border-radius: 0.5rem !important;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
     overflow: hidden;
-    border: 1px solid rgba(0,0,0,0.08);
-    background-color: var(--neutral-light);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
 }
 
 .card:hover {
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1) !important;
-    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
 }
 
-/* Card headers with professional blue theme */
+/* Card headers */
 .card-header {
-    background-color: var(--primary-color) !important;
-    color: white !important;
-    border-bottom: none;
-    padding: 0.8rem 1.25rem;
+    background-color: var(--background-light) !important;
+    border-bottom: 1px solid var(--border-color);
 }
 
-.card-header h5, .card-header h6 {
-    color: white;
-    margin-bottom: 0;
-}
-
-/* Card body with clean spacing */
-.card-body {
-    padding: 1.5rem;
-    background-color: white;
-}
-
-/* Settings accordion styling */
-.accordion-button:focus {
-    box-shadow: none;
-    border-color: var(--primary-light);
-}
-
-.accordion-button:not(.collapsed) {
-    background-color: var(--primary-color);
-    color: white;
-}
-
-/* Selected cell in table */
+/* Selected cell in table - now using light green */
 .selected-cell {
-    background-color: rgba(14, 107, 168, 0.4) !important; /* Using our primary-color */
+    background-color: var(--highlight-color) !important;
     color: white !important;
-    font-weight: bold;
+    font-weight: 600;
     transition: background-color 0.2s ease;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 
-/* Table cell hover effects */
+/* Table cell hover effects - keeping it subtle */
 #summaryTable tbody td:not(:first-child):hover {
     cursor: pointer;
-    background-color: rgba(0, 168, 232, 0.15) !important; /* Using our primary-light */
-}
-
-/* Hover highlight for cells and commentary */
-.hover-highlight {
-    background-color: rgba(0, 168, 232, 0.25) !important; /* Using our primary-light */
-    color: var(--text-primary) !important;
-    box-shadow: 0 0 0 2px rgba(0, 168, 232, 0.3) !important;
-    border-radius: 3px;
-    transition: all 0.2s ease;
+    background-color: var(--primary-light) !important;
 }
 
 /* Cell reference styling */
@@ -106,15 +67,15 @@
     padding: 0 3px;
     border-radius: 3px;
     transition: all 0.2s ease;
-    font-weight: bold;
+    font-weight: 600;
     color: var(--primary-color);
-    background-color: rgba(14, 107, 168, 0.1);
+    background-color: var(--primary-light);
     border-bottom: 1px dashed var(--primary-color);
 }
 
 .cell-reference:hover {
     text-decoration: underline;
-    background-color: rgba(14, 107, 168, 0.2);
+    background-color: var(--primary-medium);
 }
 
 /* Commentary text styling */
@@ -125,52 +86,33 @@
     overflow-y: auto;
     font-size: 0.95rem;
     border-left: 3px solid var(--primary-color);
-    background-color: white;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    transition: all 0.3s ease;
+    background-color: var(--background-light) !important;
 }
 
 /* File details badges styling */
 .badge {
-    transition: all 0.3s ease;
-    padding: 0.85rem !important;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-    border-radius: 8px !important;
+    transition: all 0.2s ease;
+    padding: 0.5rem 0.75rem !important;
+    background-color: var(--primary-light) !important;
+    color: var(--text-dark) !important;
+    border: 1px solid var(--primary-medium);
 }
 
-.badge:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+/* "Selected" badge styling - match the highlight color */
+#tableLegend .badge.bg-primary {
+    background-color: var(--highlight-light) !important;
+    color: #2e7d32 !important; /* Darker green for text */
+    border-color: rgba(76, 175, 80, 0.4);
 }
 
 .badge .text-small {
     font-size: 0.75rem;
-    opacity: 0.9;
-    font-weight: 400;
-}
-
-/* Badge color variants with our theme colors */
-.bg-primary {
-    background-color: var(--primary-color) !important;
-}
-
-.bg-info {
-    background-color: var(--primary-light) !important;
-}
-
-.bg-success {
-    background-color: #2ecc71 !important;
-}
-
-.bg-warning {
-    background-color: #f39c12 !important;
+    color: var(--text-muted);
 }
 
 /* Table container with fixed height */
 .table-container {
-    height: 400px; /* Fixed height for the table container */
+    height: 400px;
     position: relative;
     margin-bottom: 1rem;
 }
@@ -181,20 +123,23 @@
     overflow-x: auto;
     width: 100%;
     display: block;
-    -webkit-overflow-scrolling: touch; /* For smooth scrolling on iOS */
+    -webkit-overflow-scrolling: touch;
 }
 
-/* Table styling */
+/* Table styling - centering content as requested */
 #summaryTable {
     border-radius: 0.5rem;
     overflow: hidden;
     width: 100%;
-    margin-bottom: 0; /* Remove bottom margin as container has margin */
-    /* This makes first column stick to the left */
-    position: relative;
+    margin-bottom: 0;
     border-collapse: separate;
     border-spacing: 0;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+/* Center all table cell content except first column */
+#summaryTable thead th:not(:first-child),
+#summaryTable tbody td:not(:first-child) {
+    text-align: center;
 }
 
 /* Stick first column to show row names while scrolling horizontally */
@@ -203,206 +148,157 @@
     position: sticky;
     left: 0;
     z-index: 1;
+    white-space: nowrap; /* Prevent row names from wrapping */
 }
 
 /* Table column header styling */
 #summaryTable thead th {
-    background-color: var(--primary-color);
-    color: white;
+    background-color: var(--primary-light);
+    color: var(--text-dark);
     font-weight: 600;
     border-bottom: none;
     position: sticky;
     top: 0;
     z-index: 2;
-    text-align: center;
-    vertical-align: middle;
-    padding: 12px 15px;
+    padding: 12px 8px;
 }
 
 /* Make sure header corner has highest z-index when both sticky positions apply */
 #summaryTable thead th:first-child {
     z-index: 3;
-    text-align: left;
 }
 
-/* Table first column styling (row names) */
+/* Table first column styling (row names) - no wrapping */
 #summaryTable tbody td:first-child {
     font-weight: 600;
     background-color: var(--primary-light);
-    color: var(--text-primary);
-    text-align: left;
-    max-width: 200px;
+    color: var(--text-dark);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-/* Add tooltip effect for long row names */
-#summaryTable tbody td:first-child:hover {
-    overflow: visible;
-    white-space: normal;
-    word-break: break-word;
-    background-color: var(--primary-light);
-    position: relative;
-    z-index: 5;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-/* Center numeric values in table cells */
-#summaryTable tbody td:not(:first-child) {
-    text-align: center;
-    vertical-align: middle;
-}
-
-/* Make sure the background color of sticky elements shows properly */
-#summaryTable tbody tr:nth-of-type(odd) td:first-child {
-    background-color: var(--primary-light);
-}
-
+/* Consistent background for first column */
+#summaryTable tbody tr:nth-of-type(odd) td:first-child,
 #summaryTable tbody tr:nth-of-type(even) td:first-child {
     background-color: var(--primary-light);
 }
 
-/* Table striping enhancement - subtle zebra striping */
+/* Subtle table striping */
 .table-striped > tbody > tr:nth-of-type(odd) > * {
-    background-color: rgba(14, 107, 168, 0.05);
-}
-
-/* Highlight on hover for better readability */
-.table-hover > tbody > tr:hover > * {
-    background-color: rgba(14, 107, 168, 0.1);
+    background-color: rgba(0, 0, 0, 0.02);
 }
 
 /* DataTables overrides */
-.dataTables_wrapper .dataTables_filter input {
-    background-color: var(--bs-white);
-    color: var(--bs-dark);
-    border: 1px solid var(--bs-primary-border-subtle);
-    border-radius: 0.5rem;
-    padding: 0.375rem 0.75rem;
-}
-
+.dataTables_wrapper .dataTables_filter input,
 .dataTables_wrapper .dataTables_length select {
-    background-color: var(--bs-white);
-    color: var(--bs-dark);
-    border: 1px solid var(--bs-primary-border-subtle);
-    border-radius: 0.5rem;
+    background-color: white;
+    color: var(--text-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
     padding: 0.375rem 0.75rem;
 }
 
-/* Button styling with professional blue theme */
+/* Button styling - making all buttons consistent */
 .btn {
-    transition: all 0.3s ease;
-    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+    border-radius: 0.4rem;
+    padding: 0.375rem 1rem;
     font-weight: 500;
-    letter-spacing: 0.3px;
+    box-shadow: none;
+    border: 1px solid var(--border-color);
 }
 
-.btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+/* Consistent button sizes */
+.btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
 }
 
-/* Primary button with our theme color */
-.btn-primary {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
+/* Light button colors for all buttons except primary action buttons */
+.btn-outline-primary, 
+.btn-outline-secondary {
+    background-color: white;
+    color: var(--text-dark);
+    border-color: var(--border-color);
 }
 
-.btn-primary:hover, .btn-primary:focus {
-    background-color: var(--primary-dark);
-    border-color: var(--primary-dark);
-}
-
-/* Outline primary button */
-.btn-outline-primary {
+.btn-outline-primary:hover, 
+.btn-outline-secondary:hover {
+    background-color: var(--primary-light);
     color: var(--primary-color);
     border-color: var(--primary-color);
+    transform: translateY(-1px);
 }
 
-.btn-outline-primary:hover {
+/* Primary buttons - still keeping it relatively light */
+.btn-primary {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
 }
 
-/* Secondary button styling */
-.btn-secondary {
-    background-color: var(--neutral-accent);
-    border-color: var(--neutral-accent);
-    color: var(--text-primary);
-}
-
-.btn-secondary:hover {
-    background-color: #d3d9df;
-    border-color: #d3d9df;
-    color: var(--text-primary);
+.btn-primary:hover {
+    background-color: #2563eb; /* Slightly darker */
+    border-color: #2563eb;
+    transform: translateY(-1px);
 }
 
 /* Animation for alerts */
 .alert {
-    animation: fadein 0.5s;
-    border-radius: 0.5rem !important;
+    animation: fadein 0.4s;
+    border-radius: 0.4rem !important;
+    border: 1px solid var(--border-color);
 }
 
 @keyframes fadein {
-    from { opacity: 0; transform: translateY(10px); }
+    from { opacity: 0; transform: translateY(5px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Table legend styling */
+/* Table legend styling - keeping it subtle */
 #tableLegend {
     font-size: 0.9rem;
+    background-color: var(--background-light) !important;
+    border: 1px solid var(--border-color);
 }
 
-/* Card header font sizes */
-.card-header h5 {
-    font-size: 1.15rem; /* You can adjust this value to make it smaller or larger */
-    font-weight: 600;
+/* Form styling */
+.form-select, 
+.form-control {
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    color: var(--text-dark);
 }
 
-.card-header h6 {
-    font-size: 1rem; /* Smaller than h5 but still readable */
-    font-weight: 600;
-}
-
-/* Select form element font sizes */
-.form-select {
-    font-size: 0.95rem; /* You can adjust this value to make it smaller or larger */
-}
-
-.form-select option {
-    font-size: 0.95rem; /* You can adjust this value to make it smaller or larger */
-}
-
-/* Form labels */
 .form-label {
-    font-size: 0.95rem; /* You can adjust this value to make it smaller or larger */
+    font-size: 0.9rem;
     font-weight: 600;
+    color: var(--text-dark);
 }
 
 /* Custom scrollbar for better UX */
-.table-responsive::-webkit-scrollbar,
-#commentaryText::-webkit-scrollbar {
+.table-responsive::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-.table-responsive::-webkit-scrollbar-track,
-#commentaryText::-webkit-scrollbar-track {
+.table-responsive::-webkit-scrollbar-track {
     background: #f1f1f1;
     border-radius: 10px;
 }
 
-.table-responsive::-webkit-scrollbar-thumb,
-#commentaryText::-webkit-scrollbar-thumb {
-    background: rgba(14, 107, 168, 0.5);
+.table-responsive::-webkit-scrollbar-thumb {
+    background: var(--text-muted);
     border-radius: 10px;
 }
 
-.table-responsive::-webkit-scrollbar-thumb:hover,
-#commentaryText::-webkit-scrollbar-thumb:hover {
-    background: rgba(14, 107, 168, 0.7);
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-color);
+}
+
+/* Settings panel */
+#settingsCollapse {
+    background-color: var(--background-light) !important;
+    border-color: var(--border-color) !important;
 }
 
 /* Responsive fixes */
@@ -420,11 +316,7 @@
     }
     
     .badge {
-        padding: 0.5rem !important;
+        padding: 0.4rem 0.6rem !important;
         margin: 0.25rem;
-    }
-    
-    .badge .fs-5 {
-        font-size: 1rem !important;
     }
 }
