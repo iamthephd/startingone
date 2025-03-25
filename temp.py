@@ -1,78 +1,62 @@
-def add_textbox_with_styled_text(slide, left, top, width, height, text, set_border=True):
-    # Initial textbox creation
-    textbox = slide.shapes.add_textbox(left, top, width, height)
+def parse_text(text):
+    """
+    Parse the text into a dictionary where each key is a title
+    and each value is a list of points.
+    """
+    sections = {}
+    # Split sections based on two consecutive newlines.
+    for section in text.strip().split("\n\n"):
+        lines = section.strip().splitlines()
+        if not lines:
+            continue
+        title = lines[0].strip()  # The first line is the title.
+        points = [line.strip() for line in lines[1:]]  # The rest are points.
+        sections[title] = points
+    return sections
+
+def merge_texts(original_text, new_text):
+    """
+    Merge points from new_text into original_text based on matching titles.
+    """
+    # Parse both texts.
+    orig_sections = parse_text(original_text)
+    new_sections = parse_text(new_text)
     
-    if set_border:
-        # Setting a border for the textbox
-        textbox.line.color.rgb = RGBColor(0, 0, 0)  # black
-        textbox.line.width = Pt(1)
+    # For each title in new_sections, merge or add to original sections.
+    for title, new_points in new_sections.items():
+        if title in orig_sections:
+            orig_sections[title].extend(new_points)
+        else:
+            orig_sections[title] = new_points
+
+    # Reconstruct the merged text.
+    merged_sections = []
+    for title, points in orig_sections.items():
+        section = title + "\n" + "\n".join(points)
+        merged_sections.append(section)
     
-    tf = textbox.text_frame
-    tf.clear()
-    tf.word_wrap = True
-    
-    # Start with a default font size
-    default_font_size = Pt(12)
-    min_font_size = Pt(6)  # Minimum readable font size
-    
-    def fit_text_to_box():
-        # Reset the text frame
-        tf.clear()
-        current_font_size = default_font_size
-        
-        while current_font_size >= min_font_size:
-            # Reset the text frame for each iteration
-            tf.clear()
-            
-            for line in text.split('\n'):
-                p = tf.add_paragraph()
-                p.line_spacing = 1.0  # Ensure consistent line spacing
-                
-                if ':' in line:
-                    parts = line.split(':', 1)
-                    
-                    # Bold and underlined part before ':'
-                    run_bold = p.add_run()
-                    run_bold.text = parts[0] + ": "
-                    run_bold.font.bold = True
-                    run_bold.font.underline = True
-                    run_bold.font.name = 'Calibri'
-                    run_bold.font.size = current_font_size
-                    
-                    # Normal part after ':'
-                    run_normal = p.add_run()
-                    run_normal.text = parts[1]
-                    run_normal.font.name = 'Calibri'
-                    run_normal.font.size = current_font_size
-                    # Optionally add underlining to the rest of the text
-                    run_normal.font.underline = True
-                else:
-                    p.text = line
-                    p.font.name = 'Calibri'
-                    p.font.size = current_font_size
-            
-            try:
-                # Explicitly check if text fits
-                if tf.text_frame.overflowing:
-                    current_font_size -= Pt(1)
-                    continue
-                
-                return current_font_size  # Return the final font size
-            except Exception:
-                # Reduce font size and try again
-                current_font_size -= Pt(1)
-        
-        # If we can't fit text, use the minimum font size
-        return min_font_size
-    
-    # Fit text and get the final font size
-    final_font_size = fit_text_to_box()
-    
-    # Adjust textbox height to fit content exactly
-    # Get the actual height of the text
-    actual_height = tf.text_frame.text_height
-    
-    # Resize the textbox to match the actual text height
-    textbox.height = actual_height
-    
-    return textbox
+    return "\n\n".join(merged_sections)
+
+
+# Example usage
+original_text = """
+Year on Year Sales Growth
+Sales increased by 10%
+Highest growth in Q4
+
+Quarter on Quarter Profit
+Profit margins improved
+Significant cost reductions
+"""
+
+new_text = """
+Year on Year Sales Growth
+Additional market expansion
+New product line launch
+
+Quarter on Quarter Profit
+Introduced efficiency measures
+"""
+
+merged_text = merge_texts(original_text, new_text)
+print(merged_text)
