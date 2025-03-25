@@ -1,4 +1,5 @@
 def add_textbox_with_styled_text(slide, left, top, width, height, text, set_border=True):
+    # Initial textbox creation
     textbox = slide.shapes.add_textbox(left, top, width, height)
     
     if set_border:
@@ -30,7 +31,7 @@ def add_textbox_with_styled_text(slide, left, top, width, height, text, set_bord
                 if ':' in line:
                     parts = line.split(':', 1)
                     
-                    # Bold part
+                    # Bold and underlined part before ':'
                     run_bold = p.add_run()
                     run_bold.text = parts[0] + ": "
                     run_bold.font.bold = True
@@ -38,11 +39,13 @@ def add_textbox_with_styled_text(slide, left, top, width, height, text, set_bord
                     run_bold.font.name = 'Calibri'
                     run_bold.font.size = current_font_size
                     
-                    # Normal part
+                    # Normal part after ':'
                     run_normal = p.add_run()
                     run_normal.text = parts[1]
                     run_normal.font.name = 'Calibri'
                     run_normal.font.size = current_font_size
+                    # Optionally add underlining to the rest of the text
+                    run_normal.font.underline = True
                 else:
                     p.text = line
                     p.font.name = 'Calibri'
@@ -50,27 +53,26 @@ def add_textbox_with_styled_text(slide, left, top, width, height, text, set_bord
             
             try:
                 # Explicitly check if text fits
-                # This is a sanity check since the previous method might not work consistently
                 if tf.text_frame.overflowing:
                     current_font_size -= Pt(1)
                     continue
                 
-                return  # Success, text fits
+                return current_font_size  # Return the final font size
             except Exception:
                 # Reduce font size and try again
                 current_font_size -= Pt(1)
         
         # If we can't fit text, use the minimum font size
-        if current_font_size < min_font_size:
-            current_font_size = min_font_size
-            # Recreate the text frame with the minimum font size
-            tf.clear()
-            for line in text.split('\n'):
-                p = tf.add_paragraph()
-                p.text = line
-                p.font.size = current_font_size
+        return min_font_size
     
-    # Attempt to fit text
-    fit_text_to_box()
+    # Fit text and get the final font size
+    final_font_size = fit_text_to_box()
+    
+    # Adjust textbox height to fit content exactly
+    # Get the actual height of the text
+    actual_height = tf.text_frame.text_height
+    
+    # Resize the textbox to match the actual text height
+    textbox.height = actual_height
     
     return textbox
