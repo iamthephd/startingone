@@ -1,28 +1,16 @@
 function setupEventListeners() {
     // File selection change
     $('#fileSelect').on('change', function(event) {
-        // Get the current selected file
+        // Check if this is the first file selection ever
+        if (!sessionStorage.getItem('firstFileSelectionDone')) {
+            // First time file selection - just proceed normally
+            sessionStorage.setItem('firstFileSelectionDone', 'true');
+            handleFileSelection();
+            return;
+        }
+
+        // This is a subsequent file selection - show confirmation modal
         const selectedFile = $(this).val();
-        
-        // Check if this is the initial page load
-        if (!sessionStorage.getItem('initialFileLoaded')) {
-            // First time loading a file, proceed normally
-            sessionStorage.setItem('initialFileLoaded', 'true');
-            handleFileSelection();
-            return;
-        }
-
-        // Check if this file has already been confirmed in this session
-        const confirmedFiles = JSON.parse(sessionStorage.getItem('confirmedFiles') || '[]');
-        
-        // If file has already been confirmed, proceed with selection
-        if (confirmedFiles.includes(selectedFile)) {
-            handleFileSelection();
-            return;
-        }
-
-        // Prevent default selection
-        event.preventDefault();
         
         // Create confirmation modal dynamically
         const confirmModal = `
@@ -53,28 +41,36 @@ function setupEventListeners() {
         const modal = new bootstrap.Modal(document.getElementById('fileChangeConfirmModal'));
         modal.show();
 
+        // Temporarily store the selected file
+        sessionStorage.setItem('pendingFileSelection', selectedFile);
+
+        // Reset the dropdown
+        $(this).val('');
+
         // Handle confirmation button
         $('#confirmFileChangeBtn').on('click', function() {
-            // Add this file to confirmed files list
-            const confirmedFiles = JSON.parse(sessionStorage.getItem('confirmedFiles') || '[]');
-            if (!confirmedFiles.includes(selectedFile)) {
-                confirmedFiles.push(selectedFile);
-                sessionStorage.setItem('confirmedFiles', JSON.stringify(confirmedFiles));
-            }
-
+            // Retrieve the pending file selection
+            const fileToLoad = sessionStorage.getItem('pendingFileSelection');
+            
             // Set the file select to the chosen file
-            $('#fileSelect').val(selectedFile);
+            $('#fileSelect').val(fileToLoad);
 
             // Close the modal
             modal.hide();
 
+            // Remove pending file storage
+            sessionStorage.removeItem('pendingFileSelection');
+
             // Trigger file selection
             handleFileSelection();
         });
+
+        // Prevent default selection
+        event.preventDefault();
     });
 
     // Rest of the existing event listeners remain the same
-    // (Copy the rest of the event listeners from the previous implementation)
+    // (Copy all other event listeners from the original implementation)
     $('#updateCommentaryBtn').on('click', handleManualCommentaryUpdate);
     $('#saveSettingsBtn').on('click', handleSaveSettings);
     $('#sendCommentaryBtn').on('click', handleCommentaryModification);
