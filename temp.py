@@ -20,9 +20,12 @@ def add_textbox_with_styled_text(slide, left, top, width, height, text, set_bord
         current_font_size = default_font_size
         
         while current_font_size >= min_font_size:
-            # Try to add text with current font size
+            # Reset the text frame for each iteration
+            tf.clear()
+            
             for line in text.split('\n'):
                 p = tf.add_paragraph()
+                p.line_spacing = 1.0  # Ensure consistent line spacing
                 
                 if ':' in line:
                     parts = line.split(':', 1)
@@ -45,19 +48,27 @@ def add_textbox_with_styled_text(slide, left, top, width, height, text, set_bord
                     p.font.name = 'Calibri'
                     p.font.size = current_font_size
             
-            # Check if text fits
             try:
-                # This will raise an exception if text doesn't fit
-                tf.fit_text(max_size=current_font_size)
+                # Explicitly check if text fits
+                # This is a sanity check since the previous method might not work consistently
+                if tf.text_frame.overflowing:
+                    current_font_size -= Pt(1)
+                    continue
+                
                 return  # Success, text fits
-            except:
-                # Text doesn't fit, reduce font size and try again
-                tf.clear()
+            except Exception:
+                # Reduce font size and try again
                 current_font_size -= Pt(1)
         
         # If we can't fit text, use the minimum font size
         if current_font_size < min_font_size:
             current_font_size = min_font_size
+            # Recreate the text frame with the minimum font size
+            tf.clear()
+            for line in text.split('\n'):
+                p = tf.add_paragraph()
+                p.text = line
+                p.font.size = current_font_size
     
     # Attempt to fit text
     fit_text_to_box()
