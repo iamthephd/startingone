@@ -1,57 +1,76 @@
-function displaySummaryTable(tableData) {
-    console.log("DEBUG: Full table data received:", JSON.stringify(tableData, null, 2));
+function toggleCellSelection(event) {
+    const $cell = $(event.target).closest('td');
+    const rowName = $cell.data('row');
+    const columnName = $cell.data('col');
     
-    if (!tableData || !tableData.data || !tableData.columns || tableData.data.length === 0) {
-        console.error("ERROR: Invalid table data structure");
-        $('#summaryTable').html('<div class="alert alert-warning">No table data available</div>');
+    // Create a unique identifier for the cell
+    const cellKey = `${rowName}:${columnName}`;
+    
+    // Check if the cell is already selected
+    const cellIndex = selectedCells.findIndex(cell => 
+        cell.row === rowName && cell.column === columnName
+    );
+    
+    if (cellIndex > -1) {
+        // Cell is already selected, so deselect it
+        selectedCells.splice(cellIndex, 1);
+        $cell.removeClass('table-active');
+    } else {
+        // Select the cell
+        selectedCells.push({
+            row: rowName,
+            column: columnName,
+            value: $cell.data('value')
+        });
+        $cell.addClass('table-active');
+    }
+    
+    console.log('Current Selected Cells:', selectedCells);
+}
+
+function highlightSelectedCells() {
+    // Clear existing highlights
+    $('#summaryTable tbody td').removeClass('table-active');
+    
+    // Highlight selected cells
+    selectedCells.forEach(cell => {
+        $(`#summaryTable tbody td[data-row="${cell.row}"][data-col="${cell.column}"]`)
+            .addClass('table-active');
+    });
+}
+
+function handleFileSelection() {
+    const filename = $('#fileSelect').val();
+    if (!filename) return;
+    
+    // Option 1: Refresh the entire page
+    if (confirm('Selecting a new file will reset the current analysis. Do you want to continue?')) {
+        location.reload();
         return;
     }
     
-    // Completely destroy existing DataTable
-    if ($.fn.DataTable.isDataTable('#summaryTable')) {
-        $('#summaryTable').DataTable().destroy();
-    }
-    
-    // Clear table completely
-    $('#summaryTable').empty();
-    
-    // Recreate table structure
-    let headerHtml = '<thead><tr><th></th>';
-    tableData.columns.slice(1).forEach(column => {
-        headerHtml += `<th>${column}</th>`;
-    });
-    headerHtml += '</tr></thead><tbody>';
-    
-    tableData.data.forEach(row => {
-        headerHtml += `<tr><td class="fw-bold">${row[tableData.columns[0]]}</td>`;
-        tableData.columns.slice(1).forEach(column => {
-            const value = row[column] !== undefined && row[column] !== null ? row[column] : '';
-            console.log(`DEBUG: Cell value for ${column}: ${value}`);
-            headerHtml += `<td data-row="${row[tableData.columns[0]]}" data-col="${column}" data-value="${value}">${value}</td>`;
-        });
-        headerHtml += '</tr>';
-    });
-    
-    headerHtml += '</tbody>';
-    
-    // Set the entire table HTML at once
-    $('#summaryTable').html(headerHtml);
-    
-    // Reinitialize DataTable with force redraw
-    const dataTable = $('#summaryTable').DataTable({
-        paging: false,
-        searching: false,
-        info: false,
-        ordering: false,
-        retrieve: true,
-        destroy: true
-    });
-    
-    // Force a redraw
-    dataTable.draw();
-    
-    // Reattach cell click event listeners
-    $('#summaryTable tbody td:not(:first-child)').on('click', toggleCellSelection);
-    
-    console.log("DEBUG: Table rendering complete");
+    // Option 2: If you don't want a full page reload, use the existing logic
+    // ... (rest of your existing handleFileSelection code)
 }
+
+// Add CSS for selected cells
+const styleTag = document.createElement('style');
+styleTag.innerHTML = `
+    #summaryTable .table-active {
+        background-color: var(--highlight-color) !important;
+        color: white !important;
+    }
+`;
+document.head.appendChild(styleTag);
+
+// Clear selection buttons
+$('#clearSelectionBtn').on('click', function() {
+    selectedCells = [];
+    $('#summaryTable tbody td').removeClass('table-active');
+});
+
+$('#resetSelectionBtn').on('click', function() {
+    // Revert to original selected cells
+    selectedCells = [...originalSelectedCells];
+    highlightSelectedCells();
+});
