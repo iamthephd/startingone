@@ -1,17 +1,29 @@
 function setupEventListeners() {
-    // Modify the file selection change event
+    // File selection change
     $('#fileSelect').on('change', function(event) {
-        // Check if this is the initial page load or first file selection
+        // Get the current selected file
+        const selectedFile = $(this).val();
+        
+        // Check if this is the initial page load
         if (!sessionStorage.getItem('initialFileLoaded')) {
-            // First time loading a file, just proceed normally
+            // First time loading a file, proceed normally
             sessionStorage.setItem('initialFileLoaded', 'true');
             handleFileSelection();
             return;
         }
 
-        // Capture the current selected file
-        const selectedFile = $(this).val();
+        // Check if this file has already been confirmed in this session
+        const confirmedFiles = JSON.parse(sessionStorage.getItem('confirmedFiles') || '[]');
+        
+        // If file has already been confirmed, proceed with selection
+        if (confirmedFiles.includes(selectedFile)) {
+            handleFileSelection();
+            return;
+        }
 
+        // Prevent default selection
+        event.preventDefault();
+        
         // Create confirmation modal dynamically
         const confirmModal = `
             <div class="modal fade" id="fileChangeConfirmModal" tabindex="-1">
@@ -43,50 +55,45 @@ function setupEventListeners() {
 
         // Handle confirmation button
         $('#confirmFileChangeBtn').on('click', function() {
-            // Store the selected file in sessionStorage for persistence
-            sessionStorage.setItem('selectedFileOnReload', selectedFile);
-            
-            // Reload the page
-            location.reload();
-        });
+            // Add this file to confirmed files list
+            const confirmedFiles = JSON.parse(sessionStorage.getItem('confirmedFiles') || '[]');
+            if (!confirmedFiles.includes(selectedFile)) {
+                confirmedFiles.push(selectedFile);
+                sessionStorage.setItem('confirmedFiles', JSON.stringify(confirmedFiles));
+            }
 
-        // Prevent default file selection and reset dropdown
-        event.preventDefault();
-        $(this).val('');
+            // Set the file select to the chosen file
+            $('#fileSelect').val(selectedFile);
+
+            // Close the modal
+            modal.hide();
+
+            // Trigger file selection
+            handleFileSelection();
+        });
     });
 
     // Rest of the existing event listeners remain the same
-    // Update commentary button
+    // (Copy the rest of the event listeners from the previous implementation)
     $('#updateCommentaryBtn').on('click', handleManualCommentaryUpdate);
-    
-    // Save settings button
     $('#saveSettingsBtn').on('click', handleSaveSettings);
-    
-    // Send commentary modification
     $('#sendCommentaryBtn').on('click', handleCommentaryModification);
     $('#commentaryInput').on('keypress', function(e) {
         if (e.key === 'Enter') {
             handleCommentaryModification();
         }
     });
-    
-    // Contributing columns and top N changes
     $('#contributingColumnsSelect').on('change', function() {
         contributingColumns = Array.from($(this).find('option:selected')).map(option => option.value);
     });
-    
     $('#topNSelect').on('change', function() {
         topN = parseInt(this.value);
     });
-    
-    // Clear selection button
     $('#clearSelectionBtn').on('click', function() {
         selectedCells = [];
         highlightSelectedCells();
         showAlert('Selection cleared.', 'info');
     });
-    
-    // Reset selection button
     $('#resetSelectionBtn').on('click', function() {
         if (originalSelectedCells && originalSelectedCells.length > 0) {
             selectedCells = [...originalSelectedCells];
@@ -96,8 +103,6 @@ function setupEventListeners() {
             showAlert('No original selection to reset to.', 'warning');
         }
     });
-    
-    // Export to PPT button
     $('#exportPptBtn').on('click', function() {
         handleExportToPPT();
     });
@@ -106,8 +111,8 @@ function setupEventListeners() {
 function initApp() {
     console.log("Application initializing...");
     
-    // Check for previously selected file on reload
-    const selectedFileOnReload = sessionStorage.getItem('selectedFileOnReload');
+    // Clear confirmed files at the start of a new session
+    sessionStorage.removeItem('confirmedFiles');
     
     // Load available files
     fetchFiles();
@@ -123,16 +128,4 @@ function initApp() {
     $('#fileSelectionBody').on('hide.bs.collapse', function () {
         $('#fileSelectionToggle').removeClass('fa-chevron-up').addClass('fa-chevron-down');
     });
-    
-    // If a file was selected before reload, automatically select it
-    if (selectedFileOnReload) {
-        // Remove the stored file to prevent future automatic selections
-        sessionStorage.removeItem('selectedFileOnReload');
-        
-        // Set the dropdown to the previously selected file
-        $('#fileSelect').val(selectedFileOnReload);
-        
-        // Trigger file selection
-        handleFileSelection();
-    }
 }
