@@ -1,39 +1,65 @@
-def parse_text(text):
+import re
+
+def parse_sections(text):
     """
-    Parse the text into a dictionary where each key is a title
-    and each value is a list of points.
+    Splits the text into sections.
+    A section is defined as a title line (which must contain either
+    'Year on Year' or 'Quarter on Quarter') followed by one or more points.
+    It ignores extra blank lines.
+    Returns a list of tuples: (title, [point1, point2, ...])
     """
-    sections = {}
-    # Split sections based on two consecutive newlines.
-    for section in text.strip().split("\n\n"):
-        lines = section.strip().splitlines()
-        if not lines:
-            continue
-        title = lines[0].strip()  # The first line is the title.
-        points = [line.strip() for line in lines[1:]]  # The rest are points.
-        sections[title] = points
+    # Split on one or more blank lines
+    segments = [seg.strip() for seg in re.split(r'\n\s*\n', text.strip()) if seg.strip()]
+    
+    sections = []
+    current_title = None
+    current_points = []
+    
+    for seg in segments:
+        # If the segment contains one of the key phrases, treat it as a title.
+        if "Year on Year" in seg or "Quarter on Quarter" in seg:
+            # If a previous section exists, add it to our list.
+            if current_title is not None:
+                sections.append((current_title, current_points))
+            current_title = seg
+            current_points = []
+        else:
+            # Otherwise, it's a point.
+            current_points.append(seg)
+    
+    if current_title is not None:
+        sections.append((current_title, current_points))
     return sections
 
 def merge_texts(original_text, new_text):
     """
-    Merge points from new_text into original_text based on matching titles.
+    Merges the new_text into original_text by matching sections with the same title.
+    The order of sections is preserved based on the original text, with any additional
+    (non-matching) sections from the new text appended at the end.
     """
-    # Parse both texts.
-    orig_sections = parse_text(original_text)
-    new_sections = parse_text(new_text)
+    orig_sections = parse_sections(original_text)
+    new_sections = parse_sections(new_text)
     
-    # For each title in new_sections, merge or add to original sections.
-    for title, new_points in new_sections.items():
-        if title in orig_sections:
-            orig_sections[title].extend(new_points)
+    # Build a dictionary from original sections: title -> points list (copying points)
+    merged = {title: points[:] for title, points in orig_sections}
+    order = [title for title, _ in orig_sections]
+    
+    # For each section from new_text, merge points if title exists; otherwise, add as new section.
+    for title, points in new_sections:
+        if title in merged:
+            merged[title].extend(points)
         else:
-            orig_sections[title] = new_points
-
+            merged[title] = points
+            order.append(title)
+    
     # Reconstruct the merged text.
+    # Each section: title on its own, then a blank line, then points separated by a newline.
     merged_sections = []
-    for title, points in orig_sections.items():
-        section = title + "\n" + "\n".join(points)
-        merged_sections.append(section)
+    for title in order:
+        section_text = title
+        if merged[title]:
+            section_text += "\n\n" + "\n".join(merged[title])
+        merged_sections.append(section_text)
     
     return "\n\n".join(merged_sections)
 
@@ -41,21 +67,25 @@ def merge_texts(original_text, new_text):
 # Example usage
 original_text = """
 Year on Year Sales Growth
+
 Sales increased by 10%
+
 Highest growth in Q4
 
+
 Quarter on Quarter Profit
+
 Profit margins improved
+
 Significant cost reductions
 """
 
 new_text = """
 Year on Year Sales Growth
-Additional market expansion
-New product line launch
 
-Quarter on Quarter Profit
-Introduced efficiency measures
+Additional market expansion
+
+New product line launch
 """
 
 merged_text = merge_texts(original_text, new_text)
