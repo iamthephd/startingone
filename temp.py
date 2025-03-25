@@ -25,15 +25,17 @@ def add_textbox_with_dynamic_sizing(slide, left, top, width, height, text, set_b
         textbox.line.color.rgb = RGBColor(0, 0, 0)  # black
         textbox.line.width = Pt(1)
     
-    # Get the text frame
-    tf = textbox.text_frame
-    tf.clear()
-    tf.word_wrap = True
-    
     # Function to check if text fits the text box
     def does_text_fit(font_size):
-        # Reset the text frame
+        # Create a temporary presentation to calculate text size
+        temp_prs = Presentation()
+        temp_slide = temp_prs.slides.add_slide(temp_prs.slide_layouts[6])
+        temp_textbox = temp_slide.shapes.add_textbox(left, top, width, height)
+        
+        # Get the text frame
+        tf = temp_textbox.text_frame
         tf.clear()
+        tf.word_wrap = True
         
         # Process input text line by line
         for line in text.split('\n'):
@@ -57,8 +59,16 @@ def add_textbox_with_dynamic_sizing(slide, left, top, width, height, text, set_b
                 p.text = line
                 p.font.size = Pt(font_size)
         
-        # Check if text overflows
-        return tf.text_height <= height and tf.text_width <= width
+        # Estimate text dimensions
+        # Assumptions: Average character width, line height based on font size
+        char_width_factor = 0.5  # Rough estimate, adjust as needed
+        line_height_factor = 1.2  # Rough estimate, adjust as needed
+        
+        estimated_text_width = max(len(line) for line in text.split('\n')) * font_size * char_width_factor
+        estimated_text_height = len(text.split('\n')) * font_size * line_height_factor
+        
+        # Check if estimated text size fits within the text box
+        return estimated_text_width <= width and estimated_text_height <= height
     
     # Binary search to find optimal font size
     left_size, right_size = min_font_size, max_font_size
@@ -76,7 +86,10 @@ def add_textbox_with_dynamic_sizing(slide, left, top, width, height, text, set_b
             right_size = mid_size - 1
     
     # Reset text frame and add text with optimal font size
+    tf = textbox.text_frame
     tf.clear()
+    tf.word_wrap = True
+    
     for line in text.split('\n'):
         p = tf.add_paragraph()
         
