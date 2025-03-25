@@ -1,98 +1,125 @@
-def parse_text(text):
+from pptx import Presentation
+from pptx.util import Inches, Pt, RGBColor
+from pptx.enum.text import PP_ALIGN
+
+def add_textbox_with_dynamic_sizing(slide, left, top, width, height, text, set_border=True, min_font_size=6, max_font_size=24):
     """
-    Parse the input text into a dictionary of titles and their points.
+    Add a text box with dynamically adjusted font size to fit the given dimensions.
     
-    Args:
-        text (str): Input text to parse
-    
-    Returns:
-        dict: A dictionary where keys are titles and values are lists of points
+    :param slide: PowerPoint slide to add the text box
+    :param left: Left position of the text box
+    :param top: Top position of the text box
+    :param width: Width of the text box
+    :param height: Height of the text box
+    :param text: Text to be added
+    :param set_border: Whether to add a border to the text box
+    :param min_font_size: Minimum font size to prevent text from becoming unreadable
+    :param max_font_size: Maximum font size to prevent overflow
+    :return: Created text box
     """
-    titles_dict = {}
-    lines = text.split('\n')
-    current_title = None
+    # Create the text box
+    textbox = slide.shapes.add_textbox(left, top, width, height)
     
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+    # Add border if requested
+    if set_border:
+        textbox.line.color.rgb = RGBColor(0, 0, 0)  # black
+        textbox.line.width = Pt(1)
+    
+    # Get the text frame
+    tf = textbox.text_frame
+    tf.clear()
+    tf.word_wrap = True
+    
+    # Function to check if text fits the text box
+    def does_text_fit(font_size):
+        # Reset the text frame
+        tf.clear()
         
-        # Check if line is a title (contains "Year on Year" or "Quarter on Quarter")
-        if "Year on Year" in line or "Quarter on Quarter" in line:
-            current_title = line
-            titles_dict[current_title] = []
-        elif current_title is not None:
-            titles_dict[current_title].append("\n"+line)
-    
-    return titles_dict
-
-def merge_texts(original_text, new_text):
-    """
-    Merge two texts with flexible title matching.
-    
-    Args:
-        original_text (str): The original text
-        new_text (str): The new text to merge
-    
-    Returns:
-        str: Merged text
-    """
-    # Parse both texts
-    original_dict = parse_text(original_text)
-    new_dict = parse_text(new_text)
-    
-    # Merge the dictionaries
-    merged_dict = original_dict.copy()
-    for new_title, new_points in new_dict.items():
-        # Check for matching title
-        matched = False
-        for orig_title in merged_dict.keys():
-            # Match if either "Year on Year" or "Quarter on Quarter" is in both titles
-            if ("Year on Year" in new_title and "Year on Year" in orig_title) or \
-               ("Quarter on Quarter" in new_title and "Quarter on Quarter" in orig_title):
-                merged_dict[orig_title].extend(new_points)
-                matched = True
-                break
+        # Process input text line by line
+        for line in text.split('\n'):
+            p = tf.add_paragraph()
+            
+            # Handle lines with colon (for bold/underlined first part)
+            if ':' in line:
+                parts = line.split(':', 1)
+                run_bold = p.add_run()
+                run_bold.text = parts[0] + ": "
+                run_bold.font.bold = True
+                run_bold.font.underline = True
+                run_bold.font.name = 'Calibri'
+                run_bold.font.size = Pt(font_size)
+                
+                run_normal = p.add_run()
+                run_normal.text = parts[1]
+                run_normal.font.name = 'Calibri'
+                run_normal.font.size = Pt(font_size)
+            else:
+                p.text = line
+                p.font.size = Pt(font_size)
         
-        # If no match found, add as a new title
-        if not matched:
-            merged_dict[new_title] = new_points
+        # Check if text overflows
+        return tf.text_height <= height and tf.text_width <= width
     
-    # Reconstruct the text
-    output_lines = []
-    for title, points in merged_dict.items():
-        output_lines.append(title)
-        output_lines.extend(points)
-        output_lines.append('\n')  # Add an extra newline between titles
+    # Binary search to find optimal font size
+    left_size, right_size = min_font_size, max_font_size
+    best_font_size = max_font_size
     
-    # Remove the last extra newline and join
-    return '\n'.join(output_lines).rstrip()
-
-
+    while left_size <= right_size:
+        mid_size = (left_size + right_size) // 2
+        
+        if does_text_fit(mid_size):
+            # If text fits, try to increase font size
+            best_font_size = mid_size
+            left_size = mid_size + 1
+        else:
+            # If text doesn't fit, reduce font size
+            right_size = mid_size - 1
+    
+    # Reset text frame and add text with optimal font size
+    tf.clear()
+    for line in text.split('\n'):
+        p = tf.add_paragraph()
+        
+        if ':' in line:
+            parts = line.split(':', 1)
+            run_bold = p.add_run()
+            run_bold.text = parts[0] + ": "
+            run_bold.font.bold = True
+            run_bold.font.underline = True
+            run_bold.font.name = 'Calibri'
+            run_bold.font.size = Pt(best_font_size)
+            
+            run_normal = p.add_run()
+            run_normal.text = parts[1]
+            run_normal.font.name = 'Calibri'
+            run_normal.font.size = Pt(best_font_size)
+        else:
+            p.text = line
+            p.font.size = Pt(best_font_size)
+    
+    return textbox
 
 # Example usage
-original_text = """
-Year on Year Sales Growth
+def main():
+    # Create a new presentation
+    prs = Presentation()
+    
+    # Add a blank slide
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank slide layout
+    
+    # Add a text box with dynamic sizing
+    text = "This is a long text that needs to be dynamically sized to fit the text box.\nIt can handle multiple lines and special formatting like: Bold Underlined Text"
+    add_textbox_with_dynamic_sizing(
+        slide, 
+        left=Inches(1), 
+        top=Inches(2), 
+        width=Inches(6), 
+        height=Inches(2), 
+        text=text
+    )
+    
+    # Save the presentation
+    prs.save('dynamic_textbox_example.pptx')
 
-Sales increased by 10%
-
-Highest growth in Q4
-
-
-Quarter on Quarter Profit
-
-Profit margins improved
-
-Significant cost reductions
-"""
-
-new_text = """
-Year on Year Sales Growth
-
-Additional market expansion
-
-New product line launch
-"""
-
-merged_text = merge_texts(original_text, new_text)
-print(merged_text)
+if __name__ == '__main__':
+    main()
