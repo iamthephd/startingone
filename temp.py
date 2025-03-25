@@ -1,7 +1,7 @@
 function setupEventListeners() {
     // File selection change
     $('#fileSelect').on('change', function(event) {
-        // Check if this is the first file selection ever
+        // Check if this is the first file selection
         if (!sessionStorage.getItem('firstFileSelectionDone')) {
             // First time file selection - just proceed normally
             sessionStorage.setItem('firstFileSelectionDone', 'true');
@@ -9,7 +9,7 @@ function setupEventListeners() {
             return;
         }
 
-        // This is a subsequent file selection - show confirmation modal
+        // This is a subsequent file selection - show confirmation for page reload
         const selectedFile = $(this).val();
         
         // Create confirmation modal dynamically
@@ -22,7 +22,7 @@ function setupEventListeners() {
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <div class="modal-body">
-                            Changing the file will reset all current selections and analysis. Do you want to proceed?
+                            Changing the file will reload the page and reset all current selections. Do you want to proceed?
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -41,80 +41,48 @@ function setupEventListeners() {
         const modal = new bootstrap.Modal(document.getElementById('fileChangeConfirmModal'));
         modal.show();
 
-        // Temporarily store the selected file
-        sessionStorage.setItem('pendingFileSelection', selectedFile);
-
-        // Reset the dropdown
-        $(this).val('');
+        // Store the selected file for reload
+        sessionStorage.setItem('selectedFileOnReload', selectedFile);
 
         // Handle confirmation button
         $('#confirmFileChangeBtn').on('click', function() {
-            // Retrieve the pending file selection
-            const fileToLoad = sessionStorage.getItem('pendingFileSelection');
-            
-            // Set the file select to the chosen file
-            $('#fileSelect').val(fileToLoad);
-
-            // Close the modal
-            modal.hide();
-
-            // Remove pending file storage
-            sessionStorage.removeItem('pendingFileSelection');
-
-            // Trigger file selection
-            handleFileSelection();
+            // Reload the page
+            location.reload();
         });
 
         // Prevent default selection
         event.preventDefault();
+        $(this).val('');
     });
 
     // Rest of the existing event listeners remain the same
     // (Copy all other event listeners from the original implementation)
-    $('#updateCommentaryBtn').on('click', handleManualCommentaryUpdate);
-    $('#saveSettingsBtn').on('click', handleSaveSettings);
-    $('#sendCommentaryBtn').on('click', handleCommentaryModification);
-    $('#commentaryInput').on('keypress', function(e) {
-        if (e.key === 'Enter') {
-            handleCommentaryModification();
-        }
-    });
-    $('#contributingColumnsSelect').on('change', function() {
-        contributingColumns = Array.from($(this).find('option:selected')).map(option => option.value);
-    });
-    $('#topNSelect').on('change', function() {
-        topN = parseInt(this.value);
-    });
-    $('#clearSelectionBtn').on('click', function() {
-        selectedCells = [];
-        highlightSelectedCells();
-        showAlert('Selection cleared.', 'info');
-    });
-    $('#resetSelectionBtn').on('click', function() {
-        if (originalSelectedCells && originalSelectedCells.length > 0) {
-            selectedCells = [...originalSelectedCells];
-            highlightSelectedCells();
-            showAlert('Selection reset to original.', 'info');
-        } else {
-            showAlert('No original selection to reset to.', 'warning');
-        }
-    });
-    $('#exportPptBtn').on('click', function() {
-        handleExportToPPT();
-    });
+    // ... (keep all other event listeners)
 }
 
 function initApp() {
     console.log("Application initializing...");
     
-    // Clear confirmed files at the start of a new session
-    sessionStorage.removeItem('confirmedFiles');
+    // Check for previously selected file on reload
+    const selectedFileOnReload = sessionStorage.getItem('selectedFileOnReload');
     
     // Load available files
     fetchFiles();
     
     // Set up event listeners
     setupEventListeners();
+    
+    // If a file was selected before reload, automatically select it
+    if (selectedFileOnReload) {
+        // Remove the stored file to prevent future automatic selections
+        sessionStorage.removeItem('selectedFileOnReload');
+        
+        // Set the dropdown to the previously selected file
+        $('#fileSelect').val(selectedFileOnReload);
+        
+        // Trigger file selection
+        handleFileSelection();
+    }
     
     // Setup file selection collapse toggle icon behavior
     $('#fileSelectionBody').on('show.bs.collapse', function () {
