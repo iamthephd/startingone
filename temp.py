@@ -1,67 +1,73 @@
-import re
-
-def parse_sections(text):
+def parse_text(text):
     """
-    Splits the text into sections.
-    A section is defined as a title line (which must contain either
-    'Year on Year' or 'Quarter on Quarter') followed by one or more points.
-    It ignores extra blank lines.
-    Returns a list of tuples: (title, [point1, point2, ...])
-    """
-    # Split on one or more blank lines
-    segments = [seg.strip() for seg in re.split(r'\n\s*\n', text.strip()) if seg.strip()]
+    Parse the input text into a dictionary of titles and their points.
     
-    sections = []
+    Args:
+        text (str): Input text to parse
+    
+    Returns:
+        dict: A dictionary where keys are titles and values are lists of points
+    """
+    titles_dict = {}
+    lines = text.split('\n')
     current_title = None
-    current_points = []
     
-    for seg in segments:
-        # If the segment contains one of the key phrases, treat it as a title.
-        if "Year on Year" in seg or "Quarter on Quarter" in seg:
-            # If a previous section exists, add it to our list.
-            if current_title is not None:
-                sections.append((current_title, current_points))
-            current_title = seg
-            current_points = []
-        else:
-            # Otherwise, it's a point.
-            current_points.append(seg)
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Check if line is a title (contains "Year on Year" or "Quarter on Quarter")
+        if "Year on Year" in line or "Quarter on Quarter" in line:
+            current_title = line
+            titles_dict[current_title] = []
+        elif current_title is not None:
+            titles_dict[current_title].append("\n"+line)
     
-    if current_title is not None:
-        sections.append((current_title, current_points))
-    return sections
+    return titles_dict
 
 def merge_texts(original_text, new_text):
     """
-    Merges the new_text into original_text by matching sections with the same title.
-    The order of sections is preserved based on the original text, with any additional
-    (non-matching) sections from the new text appended at the end.
+    Merge two texts with flexible title matching.
+    
+    Args:
+        original_text (str): The original text
+        new_text (str): The new text to merge
+    
+    Returns:
+        str: Merged text
     """
-    orig_sections = parse_sections(original_text)
-    new_sections = parse_sections(new_text)
+    # Parse both texts
+    original_dict = parse_text(original_text)
+    new_dict = parse_text(new_text)
     
-    # Build a dictionary from original sections: title -> points list (copying points)
-    merged = {title: points[:] for title, points in orig_sections}
-    order = [title for title, _ in orig_sections]
+    # Merge the dictionaries
+    merged_dict = original_dict.copy()
+    for new_title, new_points in new_dict.items():
+        # Check for matching title
+        matched = False
+        for orig_title in merged_dict.keys():
+            # Match if either "Year on Year" or "Quarter on Quarter" is in both titles
+            if ("Year on Year" in new_title and "Year on Year" in orig_title) or \
+               ("Quarter on Quarter" in new_title and "Quarter on Quarter" in orig_title):
+                merged_dict[orig_title].extend(new_points)
+                matched = True
+                break
+        
+        # If no match found, add as a new title
+        if not matched:
+            merged_dict[new_title] = new_points
     
-    # For each section from new_text, merge points if title exists; otherwise, add as new section.
-    for title, points in new_sections:
-        if title in merged:
-            merged[title].extend(points)
-        else:
-            merged[title] = points
-            order.append(title)
+    # Reconstruct the text
+    output_lines = []
+    for title, points in merged_dict.items():
+        output_lines.append(title)
+        output_lines.extend(points)
+        output_lines.append('\n')  # Add an extra newline between titles
     
-    # Reconstruct the merged text.
-    # Each section: title on its own, then a blank line, then points separated by a newline.
-    merged_sections = []
-    for title in order:
-        section_text = title
-        if merged[title]:
-            section_text += "\n\n" + "\n".join(merged[title])
-        merged_sections.append(section_text)
-    
-    return "\n\n".join(merged_sections)
+    # Remove the last extra newline and join
+    return '\n'.join(output_lines).rstrip()
+
 
 
 # Example usage
