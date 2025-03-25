@@ -1,138 +1,78 @@
-from pptx import Presentation
-from pptx.util import Inches, Pt, RGBColor
-from pptx.enum.text import PP_ALIGN
-
-def add_textbox_with_dynamic_sizing(slide, left, top, width, height, text, set_border=True, min_font_size=6, max_font_size=24):
-    """
-    Add a text box with dynamically adjusted font size to fit the given dimensions.
-    
-    :param slide: PowerPoint slide to add the text box
-    :param left: Left position of the text box
-    :param top: Top position of the text box
-    :param width: Width of the text box
-    :param height: Height of the text box
-    :param text: Text to be added
-    :param set_border: Whether to add a border to the text box
-    :param min_font_size: Minimum font size to prevent text from becoming unreadable
-    :param max_font_size: Maximum font size to prevent overflow
-    :return: Created text box
-    """
-    # Create the text box
+def add_textbox_with_styled_text(slide, left, top, width, height, text, set_border=True):
+    # Initial textbox creation
     textbox = slide.shapes.add_textbox(left, top, width, height)
     
-    # Add border if requested
     if set_border:
+        # Setting a border for the textbox
         textbox.line.color.rgb = RGBColor(0, 0, 0)  # black
         textbox.line.width = Pt(1)
     
-    # Function to check if text fits the text box
-    def does_text_fit(font_size):
-        # Create a temporary presentation to calculate text size
-        temp_prs = Presentation()
-        temp_slide = temp_prs.slides.add_slide(temp_prs.slide_layouts[6])
-        temp_textbox = temp_slide.shapes.add_textbox(left, top, width, height)
-        
-        # Get the text frame
-        tf = temp_textbox.text_frame
-        tf.clear()
-        tf.word_wrap = True
-        
-        # Process input text line by line
-        for line in text.split('\n'):
-            p = tf.add_paragraph()
-            
-            # Handle lines with colon (for bold/underlined first part)
-            if ':' in line:
-                parts = line.split(':', 1)
-                run_bold = p.add_run()
-                run_bold.text = parts[0] + ": "
-                run_bold.font.bold = True
-                run_bold.font.underline = True
-                run_bold.font.name = 'Calibri'
-                run_bold.font.size = Pt(font_size)
-                
-                run_normal = p.add_run()
-                run_normal.text = parts[1]
-                run_normal.font.name = 'Calibri'
-                run_normal.font.size = Pt(font_size)
-            else:
-                p.text = line
-                p.font.size = Pt(font_size)
-        
-        # Estimate text dimensions
-        # Assumptions: Average character width, line height based on font size
-        char_width_factor = 0.5  # Rough estimate, adjust as needed
-        line_height_factor = 1.2  # Rough estimate, adjust as needed
-        
-        estimated_text_width = max(len(line) for line in text.split('\n')) * font_size * char_width_factor
-        estimated_text_height = len(text.split('\n')) * font_size * line_height_factor
-        
-        # Check if estimated text size fits within the text box
-        return estimated_text_width <= width and estimated_text_height <= height
-    
-    # Binary search to find optimal font size
-    left_size, right_size = min_font_size, max_font_size
-    best_font_size = max_font_size
-    
-    while left_size <= right_size:
-        mid_size = (left_size + right_size) // 2
-        
-        if does_text_fit(mid_size):
-            # If text fits, try to increase font size
-            best_font_size = mid_size
-            left_size = mid_size + 1
-        else:
-            # If text doesn't fit, reduce font size
-            right_size = mid_size - 1
-    
-    # Reset text frame and add text with optimal font size
     tf = textbox.text_frame
     tf.clear()
     tf.word_wrap = True
     
-    for line in text.split('\n'):
-        p = tf.add_paragraph()
+    # Start with a default font size
+    default_font_size = Pt(12)
+    min_font_size = Pt(6)  # Minimum readable font size
+    
+    def fit_text_to_box():
+        # Reset the text frame
+        tf.clear()
+        current_font_size = default_font_size
         
-        if ':' in line:
-            parts = line.split(':', 1)
-            run_bold = p.add_run()
-            run_bold.text = parts[0] + ": "
-            run_bold.font.bold = True
-            run_bold.font.underline = True
-            run_bold.font.name = 'Calibri'
-            run_bold.font.size = Pt(best_font_size)
+        while current_font_size >= min_font_size:
+            # Reset the text frame for each iteration
+            tf.clear()
             
-            run_normal = p.add_run()
-            run_normal.text = parts[1]
-            run_normal.font.name = 'Calibri'
-            run_normal.font.size = Pt(best_font_size)
-        else:
-            p.text = line
-            p.font.size = Pt(best_font_size)
+            for line in text.split('\n'):
+                p = tf.add_paragraph()
+                p.line_spacing = 1.0  # Ensure consistent line spacing
+                
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    
+                    # Bold and underlined part before ':'
+                    run_bold = p.add_run()
+                    run_bold.text = parts[0] + ": "
+                    run_bold.font.bold = True
+                    run_bold.font.underline = True
+                    run_bold.font.name = 'Calibri'
+                    run_bold.font.size = current_font_size
+                    
+                    # Normal part after ':'
+                    run_normal = p.add_run()
+                    run_normal.text = parts[1]
+                    run_normal.font.name = 'Calibri'
+                    run_normal.font.size = current_font_size
+                    # Optionally add underlining to the rest of the text
+                    run_normal.font.underline = True
+                else:
+                    p.text = line
+                    p.font.name = 'Calibri'
+                    p.font.size = current_font_size
+            
+            try:
+                # Explicitly check if text fits
+                if tf.text_frame.overflowing:
+                    current_font_size -= Pt(1)
+                    continue
+                
+                return current_font_size  # Return the final font size
+            except Exception:
+                # Reduce font size and try again
+                current_font_size -= Pt(1)
+        
+        # If we can't fit text, use the minimum font size
+        return min_font_size
+    
+    # Fit text and get the final font size
+    final_font_size = fit_text_to_box()
+    
+    # Adjust textbox height to fit content exactly
+    # Get the actual height of the text
+    actual_height = tf.text_frame.text_height
+    
+    # Resize the textbox to match the actual text height
+    textbox.height = actual_height
     
     return textbox
-
-# Example usage
-def main():
-    # Create a new presentation
-    prs = Presentation()
-    
-    # Add a blank slide
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank slide layout
-    
-    # Add a text box with dynamic sizing
-    text = "This is a long text that needs to be dynamically sized to fit the text box.\nIt can handle multiple lines and special formatting like: Bold Underlined Text"
-    add_textbox_with_dynamic_sizing(
-        slide, 
-        left=Inches(1), 
-        top=Inches(2), 
-        width=Inches(6), 
-        height=Inches(2), 
-        text=text
-    )
-    
-    # Save the presentation
-    prs.save('dynamic_textbox_example.pptx')
-
-if __name__ == '__main__':
-    main()
