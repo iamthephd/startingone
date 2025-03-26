@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
 # Add session middleware with a secret key
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev_secret_key"))
 
