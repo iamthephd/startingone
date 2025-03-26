@@ -1,43 +1,41 @@
-function appendMessage(message, sender) {
-    const messageElement = $('<div>').addClass(`message ${sender}`);
+# Use an official lightweight Python image.
+FROM python:3.9-slim AS base
 
-    // Check for markdown-like table or plain text
-    if (isMarkdownTable(message)) {
-        const tableHTML = markdownToHTMLTable(message);
-        messageElement.html(tableHTML);
-    } else {
-        messageElement.text(message);
-    }
+# Set environment variables to prevent Python buffering and enable .env support
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-    chatbotMessages.append(messageElement);
+# Set working directory
+WORKDIR /app
 
-    // Scroll to bottom
-    chatbotMessages.scrollTop(chatbotMessages[0].scrollHeight);
-}
+# Install system dependencies if needed (e.g., for Oracle client libraries)
+# RUN apt-get update && apt-get install -y libaio1
 
-// Check if the message contains a markdown-like table
-function isMarkdownTable(message) {
-    return message.includes('|') && message.includes('---');
-}
+# Copy only requirements first for better caching.
+COPY requirements.txt .
 
-// Convert markdown table to HTML
-function markdownToHTMLTable(markdown) {
-    const lines = markdown.trim().split('\n');
-    const headers = lines[0].split('|').map(h => h.trim()).filter(h => h);
-    const rows = lines.slice(2).map(line =>
-        line.split('|').map(cell => cell.trim()).filter(cell => cell)
-    );
+# Install dependencies
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-    let tableHTML = `
-        <div class="chat-bubble">
-            <table class="chat-table">
-                <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
-                <tbody>
-                    ${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
+# Copy the rest of the application code.
+COPY . .
 
-    return tableHTML;
-}
+# Expose the port on which the app will run (e.g., 8000)
+EXPOSE 8000
+
+# Command to run the app using uvicorn (adjust the module name as needed)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
+version: '3.8'
+services:
+  fastapi_app:
+    build: .
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./:/app  # Mount the current directory if needed for live reload during development
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
