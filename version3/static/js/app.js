@@ -555,7 +555,7 @@ $(document).ready(function() {
                 if (data.error) {
                     throw new Error(data.error);
                 }
-                
+                console.log("update commentary")
                 // Display updated commentary
                 displayCommentary(data.commentary);
                 
