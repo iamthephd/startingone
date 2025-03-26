@@ -1,55 +1,107 @@
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.templating import Jinja2Templates
 import os
+import json
+import logging
 import pandas as pd
-from pydantic import BaseModel
-from typing import List, Dict, Optional
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
-# Assuming these are imported from your existing project
-# You'll need to implement these functions similarly to your Flask version
-from your_project_modules import (
-    load_config, 
-    get_details, 
-    get_summary_table, 
-    get_reason_code, 
-    get_top_attributes, 
-    get_commentary, 
-    modify_commentary, 
-    update_commentary, 
-    save_config,
-    chat_bot_reply,
-    logger
-)
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Setup templates (if you're using server-side rendering)
+# Add session middleware with a secret key
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev_secret_key"))
+
+# Set up Jinja2 templates (assumes your templates are in a folder named 'templates')
 templates = Jinja2Templates(directory="templates")
 
 # Load configuration
+def load_config():
+    try:
+        with open('config.json', 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+        return {}
+
+def save_config(updated_config):
+    try:
+        with open('config.json', 'w') as f:
+            json.dump(updated_config, f, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving config: {e}")
+        return False
+
 config = load_config()
 
-# Pydantic models for request validation
-class FileDetailsRequest(BaseModel):
-    filename: str
+# Mock functions that would be implemented elsewhere
+def get_details(filename):
+    logger.debug(f"Getting details for file: {filename}")
+    return {
+        "rows": 1000,
+        "columns": 15,
+        "avg_amount": 1250.75,
+        "min_amount": 100.25,
+        "max_amount": 9999.99,
+        "total_records": 1000
+    }
 
-class ModifyCommentaryRequest(BaseModel):
-    query: str
+def get_summary_table(filename):
+    logger.debug(f"Generating summary table for file: {filename}")
+    data = {
+        "Category": ["Category A", "Category B", "Category C", "Category D", "Category E"],
+        "Q1": [100, 150, 200, 120, 180],
+        "Q2": [110, 140, 190, 130, 170],
+        "Q3": [120, 160, 210, 140, 190],
+        "Q4": [130, 170, 220, 150, 200]
+    }
+    return pd.DataFrame(data)
 
-class UpdateCommentaryRequest(BaseModel):
-    selected_cells: List[Dict] = []
-    contributing_columns: List[str] = []
-    top_n: int = 3
+def get_reason_code(df, filename):
+    logger.debug(f"Getting reason codes for file: {filename}")
+    return [("Category A", "Q1", 100), ("Category C", "Q3", 210), ("Category E", "Q4", 200)]
 
-class SaveSettingsRequest(BaseModel):
-    contributing_columns: List[str] = []
-    top_n: int = 3
+def get_top_attributes(engine, selected_cells, contributing_columns, top_n):
+    logger.debug(f"Getting top attributes with {len(selected_cells)} selected cells")
+    return {
+        ("Category A", "Q1", 100): {"Factor 1": 40, "Factor 2": 35, "Factor 3": 25},
+        ("Category C", "Q3", 210): {"Factor 4": 70, "Factor 5": 80, "Factor 6": 60},
+        ("Category E", "Q4", 200): {"Factor 7": 55, "Factor 8": 90, "Factor 9": 55}
+    }
 
-class ChatbotRequest(BaseModel):
-    query: str
+def get_commentary(top_contributors):
+    logger.debug(f"Generating commentary based on {len(top_contributors)} contributors")
+    return (
+        "Based on the analysis, we can observe the following trends:\n\n"
+        "1. Cell Category A, Q1 shows lower than expected performance due to Factor 1 (40%), "
+        "Factor 2 (35%), and Factor 3 (25%).\n\n"
+        "2. Cell Category C, Q3 shows significant growth primarily driven by Factor 5 (80%), "
+        "followed by Factor 4 (70%) and Factor 6 (60%).\n\n"
+        "3. Cell Category E, Q4 demonstrates strong results with Factor 8 (90%) being the main contributor, "
+        "supported by Factor 7 and Factor 9 (both 55%)."
+    )
 
-@app.get("/")
+def modify_commentary(user_query, current_commentary):
+    logger.debug(f"Modifying commentary based on query: {user_query}")
+    return current_commentary + f"\n\nUpdated based on query: {user_query}"
+
+def update_commentary(selected_cells, contributing_columns, top_n):
+    logger.debug(f"Updating commentary with {len(selected_cells)} cells, {len(contributing_columns)} columns, top {top_n}")
+    top_attrs = get_top_attributes(None, selected_cells, contributing_columns, top_n)
+    return get_commentary(top_attrs)
+
+def chat_bot_reply(query):
+    logger.debug(f"Generating chatbot reply for: {query}")
+    return f"I understand you're asking about '{query}'. This is a system for analyzing financial data. How can I help you understand the current analysis?"
+
+# Routes
+
+@app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main application page"""
     return templates.TemplateResponse("index.html", {"request": request})
@@ -57,42 +109,37 @@ async def index(request: Request):
 @app.get("/api/files")
 async def get_files():
     """Get list of available files"""
-    # This would typically come from a database or filesystem
     files = ["financial_data_2023.csv", "revenue_report_q2.csv", "expense_analysis.csv"]
     return files
 
 @app.post("/api/file_details")
-async def file_details(request: FileDetailsRequest):
+async def file_details(request: Request):
     """Get details for a specific file"""
-    filename = request.filename
+    data = await request.json()
+    filename = data.get("filename")
     
     if not filename:
         raise HTTPException(status_code=400, detail="No filename provided")
     
     try:
-        # Get file details
         details = get_details(filename)
-        
-        # Get summary table
         df = get_summary_table(filename)
-        
-        # Convert DataFrame to dict for JSON serialization
-        table_data = df.to_dict(orient='records')
+        table_data = df.to_dict(orient="records")
         columns = df.columns.tolist()
-        
-        # Get selected cells
         selected_cells = get_reason_code(df, filename)
-        
-        # Get default values for this file from config
         file_config = config.get(filename, {})
-        contributing_columns = file_config.get('contributing_columns', [])
-        top_n = file_config.get('top_n', 3)
-        
-        # Get top attributes
+        contributing_columns = file_config.get("contributing_columns", [])
+        top_n = file_config.get("top_n", 3)
         top_attrs = get_top_attributes(None, selected_cells, contributing_columns, top_n)
-        
-        # Generate commentary
         commentary = get_commentary(top_attrs)
+        
+        # Save values to session
+        request.session["current_file"] = filename
+        request.session["summary_table"] = table_data
+        request.session["selected_cells"] = selected_cells
+        request.session["contributing_columns"] = contributing_columns
+        request.session["top_n"] = top_n
+        request.session["commentary"] = commentary
         
         return {
             "details": details,
@@ -111,20 +158,18 @@ async def file_details(request: FileDetailsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/modify_commentary")
-async def api_modify_commentary(request: ModifyCommentaryRequest):
+async def api_modify_commentary(request: Request):
     """Modify commentary based on user input"""
-    user_query = request.query
+    data = await request.json()
+    user_query = data.get("query")
+    current_commentary = request.session.get("commentary", "")
     
     if not user_query:
         raise HTTPException(status_code=400, detail="No query provided")
     
     try:
-        # Call modify_commentary function
-        # Note: In FastAPI, you'll need to manage state differently 
-        # (e.g., using database or external storage instead of session)
-        current_commentary = ""  # You'll need to retrieve this from your state management
         updated_commentary = modify_commentary(user_query, current_commentary)
-        
+        request.session["commentary"] = updated_commentary
         return {"commentary": updated_commentary}
     
     except Exception as e:
@@ -132,16 +177,19 @@ async def api_modify_commentary(request: ModifyCommentaryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/update_commentary")
-async def api_update_commentary(request: UpdateCommentaryRequest):
+async def api_update_commentary(request: Request):
     """Update commentary based on manual settings"""
+    data = await request.json()
+    selected_cells = data.get("selected_cells", [])
+    contributing_columns = data.get("contributing_columns", [])
+    top_n = data.get("top_n", 3)
+    
     try:
-        # Call update_commentary function
-        updated_commentary = update_commentary(
-            request.selected_cells, 
-            request.contributing_columns, 
-            request.top_n
-        )
-        
+        updated_commentary = update_commentary(selected_cells, contributing_columns, top_n)
+        request.session["selected_cells"] = selected_cells
+        request.session["contributing_columns"] = contributing_columns
+        request.session["top_n"] = top_n
+        request.session["commentary"] = updated_commentary
         return {"commentary": updated_commentary}
     
     except Exception as e:
@@ -149,24 +197,26 @@ async def api_update_commentary(request: UpdateCommentaryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/save_settings")
-async def api_save_settings(request: SaveSettingsRequest):
+async def api_save_settings(request: Request):
     """Save settings to config file"""
+    data = await request.json()
+    filename = request.session.get("current_file")
+    contributing_columns = data.get("contributing_columns", [])
+    top_n = data.get("top_n", 3)
+    
+    if not filename:
+        raise HTTPException(status_code=400, detail="No file selected")
+    
     try:
-        # Get current filename (you'll need to implement state management)
-        filename = ""  # Retrieve current filename from your state management
-        
-        if not filename:
-            raise HTTPException(status_code=400, detail="No file selected")
-        
-        # Update config
+        global config
         current_config = load_config()
         current_config[filename] = {
-            'contributing_columns': request.contributing_columns,
-            'top_n': request.top_n
+            "contributing_columns": contributing_columns,
+            "top_n": top_n
         }
         
-        # Save config
         if save_config(current_config):
+            config = current_config
             return {"success": True, "message": "Settings saved successfully"}
         else:
             raise HTTPException(status_code=500, detail="Failed to save settings")
@@ -176,23 +226,23 @@ async def api_save_settings(request: SaveSettingsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chatbot")
-async def api_chatbot(request: ChatbotRequest):
+async def api_chatbot(request: Request):
     """Handle chatbot interactions"""
-    query = request.query
+    data = await request.json()
+    query = data.get("query")
     
     if not query:
         raise HTTPException(status_code=400, detail="No query provided")
     
     try:
-        # Get chatbot reply
         reply = chat_bot_reply(query)
-        
         return {"reply": reply}
     
     except Exception as e:
         logger.error(f"Error getting chatbot reply: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == '__main__':
+# Run the server using uvicorn when executed directly
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=5000)
+    uvicorn.run("your_module_name:app", host="0.0.0.0", port=5000, reload=True)
